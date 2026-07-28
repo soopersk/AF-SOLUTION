@@ -1,0 +1,10 @@
+{
+  "id": "evt-calc-1",
+  "contextId": "ctx-200",
+  "source": "calculator",
+  "additionalData": {
+    "taskId": "calc-task-9",
+    "type": "CALC_EVENT",
+    "STATE": "FINISH"
+  }
+}

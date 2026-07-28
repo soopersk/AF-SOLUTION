@@ -1,0 +1,70 @@
+# EMS Helm values (skeleton — ems-design §10). Environment overlays set image.tag,
+# springProfile, dispatch.enabled, and the Vault/Azure identity wiring.
+
+image:
+  repository: REGISTRY/ems
+  tag: ""            # set per release; defaults to Chart.appVersion
+  pullPolicy: IfNotPresent
+
+# HPA owns replica count (3–10); replicaCount is the initial floor only.
+replicaCount: 3
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+# maxUnavailable: 0 keeps ingest capacity during rollout; the outbox dispatcher runs in
+# EVERY pod (FOR UPDATE SKIP LOCKED makes concurrent drains safe — §10).
+strategy:
+  maxSurge: 1
+  maxUnavailable: 0
+
+# Spring profile: shadow (§11 stage 1, dispatch OFF) → live (stage 2, dispatch ON).
+springProfile: shadow
+
+# The §11 shadow→live switch, surfaced as an env toggle so the flip is a values change,
+# not a rebuild. Must stay false until cutover.
+dispatch:
+  enabled: false
+
+consumer:
+  enabled: true
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: "2"
+    memory: 1Gi
+
+service:
+  type: ClusterIP
+  port: 8080
+
+# Actuator probes (§10).
+probes:
+  liveness:
+    path: /actuator/health/liveness
+  readiness:
+    path: /actuator/health/readiness
+
+# Secrets are injected by Vault Agent (Airflow basic auth, Azure OAuth, JKS truststore,
+# EDF API keys) — never baked into the image or values (§10). Placeholder annotations:
+vault:
+  enabled: true
+  role: ems
+  secretPath: secret/data/ems
+
+# Azure passwordless PG (Workload Identity). Non-secret; the JDBC URL flips auth to Entra.
+azure:
+  workloadIdentity:
+    enabled: false
+    clientId: ""
+
+# Non-secret env passed through to the container.
+env:
+  KAFKA_BOOTSTRAP_SERVERS: ""
+  EMS_AIRFLOW_BASE_URL: ""
+  EMS_EDF_BASE_URL: ""

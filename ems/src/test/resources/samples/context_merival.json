@@ -1,0 +1,10 @@
+{
+  "id": "ctx-300",
+  "data": {
+    "reporting-date": "2026-07-17",
+    "run-category": "TOPSIDE",
+    "h3Region": "emea",
+    "frequency": "DAILY"
+  },
+  "parentIds": ["ctx-200"]
+}

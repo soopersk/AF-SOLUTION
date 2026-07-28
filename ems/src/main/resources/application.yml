@@ -1,0 +1,132 @@
+# ============================================================================
+# EMS base configuration (ems-design §10). Secrets are NEVER here — they come
+# from Vault/env in-cluster. Kafka consumer tuning and toggles live here; the
+# two legacy `system_properties` filter rows move to the `subscription` table (§7).
+#
+# Profiles:
+#   local   — Testcontainers / docker-compose Postgres+Kafka, dispatch off
+#   azure   — Azure PG Flexible Server passwordless (Entra/Workload Identity)
+#   shadow  — production shadow-consume: own group, dispatch OFF (§11 stage 1)
+#   live    — post-cutover: dispatch ON (§11 stage 2)
+# ============================================================================
+spring:
+  application:
+    name: ems
+  # Fail fast if a migration is missing/out of order rather than starting on a bad schema.
+  flyway:
+    enabled: true
+    baseline-on-migrate: false
+    validate-on-migrate: true
+  datasource:
+    # Overridden per profile / by env. HikariCP pool capped at 10 per pod (was 40) —
+    # a deliberate regression guardrail (ems-design §10).
+    hikari:
+      maximum-pool-size: 10
+      # statement_timeout is a backstop against the legacy 10-min query returning:
+      data-source-properties:
+        options: "-c statement_timeout=30000"
+  kafka:
+    consumer:
+      # auto.offset.reset=earliest is a deliberate correction vs the legacy `latest` +
+      # auto-commit=true default (properties.sql) — lost/expired offsets must resume from
+      # the oldest retained record, never silently skip forward past unprocessed events.
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      properties:
+        # ErrorHandlingDeserializer wraps the value deserializer so a poison payload
+        # becomes a handled record (→ DLQ) instead of a stuck partition.
+        spring.deserializer.value.delegate.class: org.apache.kafka.common.serialization.StringDeserializer
+    listener:
+      # MANUAL_IMMEDIATE: we ack only after the single-TX persist commits (§4.2 / A1).
+      ack-mode: manual_immediate
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, prometheus, metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true   # liveness/readiness for K8s (§10)
+  metrics:
+    tags:
+      application: ems
+
+# ---- EMS-specific knobs -----------------------------------------------------
+ems:
+  dispatch:
+    # The §11 shadow→live switch. OFF everywhere until the flip; outbox rows accumulate
+    # (written in-TX) but are never POSTed to Airflow. Turned on at cutover (stage 2).
+    enabled: false
+  consumer:
+    # Lets a pod run as query-API-only (no ingest) if ever needed for isolation.
+    enabled: true
+  airflow:
+    # Outbox → Airflow REST. Basic-auth creds resolved from Vault in-cluster.
+    base-url: ""
+    trigger-backoff:
+      initial: 30s
+      max: 600s
+  edf:
+    # Context enrichment API (EDF). Short bounded in-call retry then park (§10).
+    base-url: ""
+  auth:
+    # ems-design §4.3 "Auth". mode=local self-issues HS256 tokens via POST /token so dev boxes,
+    # CI and non-Entra environments work without an IdP; it is NOT an open door (every endpoint
+    # still needs a token and the right group). Any shared environment must set:
+    #   ems.auth.mode: entra
+    #   spring.security.oauth2.resourceserver.jwt.issuer-uri: https://login.microsoftonline.com/<tenant>/v2.0
+    # Startup then fails fast if the issuer is missing, and POST /token no longer exists.
+    mode: local
+    # The Entra claim carrying group membership (some tenants emit `roles` instead), and the claim
+    # that names the caller — the value audited into decided_by / replayed_by / updated_by.
+    groups-claim: groups
+    principal-claim: sub
+    # Group identifiers → authorities. In Entra these are group OBJECT IDs, set per environment.
+    groups:
+      dispatcher: ems-dispatchers
+      admin: ems-admins
+      ci: ems-registry-ci
+    # HTTP Basic fallback accounts (the legacy AuthorizationManager's Basic mode). Empty here on
+    # purpose — passwords come from Vault/env in-cluster and must carry an encoder prefix, e.g.
+    #   EMS_AUTH_USERS_0_USERNAME=capital_control_dag
+    #   EMS_AUTH_USERS_0_PASSWORD={bcrypt}$2a$10$...
+    #   EMS_AUTH_USERS_0_GROUPS_0=ems-dispatchers
+    users: []
+    local:
+      # Blank ⇒ a per-process random key (fine for one dev JVM, wrong for anything with 2 pods).
+      signing-key: ""
+      token-ttl: 1h
+
+---
+spring:
+  config:
+    activate:
+      on-profile: local
+  datasource:
+    # Placeholder; Testcontainers injects the real URL via @DynamicPropertySource.
+    url: jdbc:postgresql://localhost:5432/ems
+    username: ems
+    password: ems
+ems:
+  dispatch:
+    enabled: false
+
+---
+spring:
+  config:
+    activate:
+      on-profile: shadow
+ems:
+  dispatch:
+    enabled: false        # §11 stage 1: consume live, persist, write outbox — never dispatch
+
+---
+spring:
+  config:
+    activate:
+      on-profile: live
+ems:
+  dispatch:
+    enabled: true         # §11 stage 2: post-flip, dispatch on

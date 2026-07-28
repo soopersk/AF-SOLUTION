@@ -1,0 +1,12 @@
+{
+  "id": "ctx-200",
+  "datasetId": "ds-calc-1",
+  "data": {
+    "reportingDate": "2026-07-17",
+    "runCategory": "topside",
+    "regionCode": "AMERICAS",
+    "frequency": "D",
+    "logicalBusinessDate": "2026-07-17"
+  },
+  "parentIds": ["ctx-100", "ctx-050"]
+}

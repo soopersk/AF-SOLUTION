@@ -1,0 +1,146 @@
+[
+  {
+    "tenantId": "PLATFORM",
+    "stage": "PERSIST",
+    "ruleName": "persist_frca_tenant",
+    "controlDagId": null,
+    "whenCel": "event.additionalData.tenant == \"FRCA\"",
+    "registryVersion": "seed-0",
+    "enabled": true
+  },
+  {
+    "tenantId": "PLATFORM",
+    "stage": "PERSIST",
+    "ruleName": "persist_aqua_ccr_adjusted",
+    "controlDagId": null,
+    "whenCel": "event.additionalData.tenant == \"AQUA_CCR\" && event.additionalData.batchtype == \"INTRA-MONTH-ADJUSTED\"",
+    "registryVersion": "seed-0",
+    "enabled": true
+  },
+  {
+    "tenantId": "PLATFORM",
+    "stage": "PERSIST",
+    "ruleName": "persist_aqua_ccr_unadjusted",
+    "controlDagId": null,
+    "whenCel": "event.additionalData.tenant == \"AQUA_CCR\" && event.additionalData.batchtype == \"INTRA-MONTH-UNADJUSTED\"",
+    "registryVersion": "seed-0",
+    "enabled": true
+  },
+  {
+    "tenantId": "PLATFORM",
+    "stage": "PERSIST",
+    "ruleName": "persist_merival_batch",
+    "controlDagId": null,
+    "whenCel": "event.source == \"MERIVAL\" && event.additionalData.TYPE == \"INGESTION\" && event.additionalData.RUN_TYPE == \"BATCH\"",
+    "registryVersion": "seed-0",
+    "enabled": true
+  },
+  {
+    "tenantId": "PLATFORM",
+    "stage": "PERSIST",
+    "ruleName": "persist_merival_intra",
+    "controlDagId": null,
+    "whenCel": "event.source == \"MERIVAL\" && event.additionalData.TYPE == \"INGESTION\" && event.additionalData.RUN_TYPE == \"INTRA\"",
+    "registryVersion": "seed-0",
+    "enabled": true
+  },
+  {
+    "tenantId": "PLATFORM",
+    "stage": "PERSIST",
+    "ruleName": "persist_rwa_mr_monthly",
+    "controlDagId": null,
+    "whenCel": "event.source == \"RWA\" && event.additionalData.tenant == \"MR\" && event.additionalData.FREQUENCY == \"MONTHLY\"",
+    "registryVersion": "seed-0",
+    "enabled": true
+  },
+  {
+    "tenantId": "PLATFORM",
+    "stage": "PERSIST",
+    "ruleName": "persist_cva_mr_monthly",
+    "controlDagId": null,
+    "whenCel": "event.source == \"CVA\" && event.additionalData.tenant == \"MR\" && event.additionalData.FREQUENCY == \"MONTHLY\"",
+    "registryVersion": "seed-0",
+    "enabled": true
+  },
+  {
+    "tenantId": "CAPITAL",
+    "stage": "FORWARD",
+    "ruleName": "cap_data_update.FRCA_CURATION",
+    "controlDagId": "orchestration_control_dag_capital",
+    "whenCel": "event.additionalData.tenant == \"FRCA\" && event.additionalData.msgTypeEventType == \"DATA-UPDATE\" && event.additionalData.updateType == \"CURATION\" && context.data[\"run-category\"].startsWith(\"TOPSIDE\")",
+    "registryVersion": "seed-0",
+    "enabled": true
+  },
+  {
+    "tenantId": "CAPITAL",
+    "stage": "FORWARD",
+    "ruleName": "cap_data_update.FRCA_CALC",
+    "controlDagId": "orchestration_control_dag_capital",
+    "whenCel": "event.additionalData.tenant == \"FRCA\" && event.additionalData.updateType == \"CALC_EVENT\" && event.additionalData.STATE == \"FINISH\"",
+    "registryVersion": "seed-0",
+    "enabled": true
+  },
+  {
+    "tenantId": "CAPITAL",
+    "stage": "FORWARD",
+    "ruleName": "cap_AQUA_CCR_ADJUSTED",
+    "controlDagId": "orchestration_control_dag_capital",
+    "whenCel": "event.additionalData.tenant == \"AQUA_CCR\" && event.additionalData.batchType == \"INTRA-MONTH-ADJUSTED\"",
+    "registryVersion": "seed-0",
+    "enabled": true
+  },
+  {
+    "tenantId": "CAPITAL",
+    "stage": "FORWARD",
+    "ruleName": "cap_AQUA_CCR_UNADJUSTED",
+    "controlDagId": "orchestration_control_dag_capital",
+    "whenCel": "event.additionalData.tenant == \"AQUA_CCR\" && event.additionalData.batchType == \"INTRA-MONTH-UNADJUSTED\"",
+    "registryVersion": "seed-0",
+    "enabled": true
+  },
+  {
+    "tenantId": "CAPITAL",
+    "stage": "FORWARD",
+    "ruleName": "cap_data_update.MER_batch",
+    "controlDagId": "orchestration_control_dag_capital",
+    "whenCel": "event.source == \"MERIVAL\" && event.additionalData.TYPE == \"INGESTION\" && event.additionalData.RUN_TYPE == \"BATCH\"",
+    "registryVersion": "seed-0",
+    "enabled": true
+  },
+  {
+    "tenantId": "CAPITAL",
+    "stage": "FORWARD",
+    "ruleName": "cap_data_update.MER_intra",
+    "controlDagId": "orchestration_control_dag_capital",
+    "whenCel": "event.source == \"MERIVAL\" && event.additionalData.TYPE == \"INGESTION\" && event.additionalData.RUN_TYPE == \"INTRA\"",
+    "registryVersion": "seed-0",
+    "enabled": true
+  },
+  {
+    "tenantId": "CAPITAL",
+    "stage": "FORWARD",
+    "ruleName": "cap_RWA",
+    "controlDagId": "orchestration_control_dag_capital",
+    "whenCel": "event.source == \"RWA\" && event.additionalData.tenant == \"MR\" && event.additionalData.FREQUENCY == \"MONTHLY\" && event.additionalData.STATE == \"FINISH\"",
+    "registryVersion": "seed-0",
+    "enabled": true
+  },
+  {
+    "tenantId": "CAPITAL",
+    "stage": "FORWARD",
+    "ruleName": "cap_CVA",
+    "controlDagId": "orchestration_control_dag_capital",
+    "whenCel": "event.source == \"CVA\" && event.additionalData.tenant == \"MR\" && event.additionalData.FREQUENCY == \"MONTHLY\" && event.additionalData.STATE == \"FINISH\"",
+    "registryVersion": "seed-0",
+    "enabled": true
+  },
+  {
+    "tenantId": "NSFR",
+    "stage": "FORWARD",
+    "ruleName": "nsfr_data-update",
+    "controlDagId": "orchestration_control_dag_liquidity",
+    "whenCel": "event.additionalData.msgTypeEventType == \"DATA-UPDATE\" && event.additionalData.tenant == \"ACTL\" && event.additionalData.updateType == \"CURATION\"",
+    "registryVersion": "seed-0",
+    "enabled": false
+  }
+]

@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- ========================================================================
+         EMS — Event Management Service (rewrite: Scala → Java 17 / Spring Boot)
+         Trigger-plan Phase A. Thin, rule-free ingest + query service.
+         See ems-design.md (build-ready design) and ems/README.md (phase board).
+         ======================================================================== -->
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.5.4</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.orchestration</groupId>
+    <artifactId>ems</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <name>ems</name>
+    <description>Event Management Service — trigger-plan Phase A</description>
+
+    <properties>
+        <java.version>17</java.version>
+        <!-- Pins that the design calls out explicitly (ems-design §10). Version bumps are a
+             deliberate, reviewed act — the CEL engine version is a recomputability anchor
+             recorded in routing_decision.engine_version, and must stay in lock-step with the
+             celpy pin on the framework side via the shared conformance suite (§7). -->
+        <cel-java.version>0.4.4</cel-java.version>
+        <jcs.version>1.1</jcs.version>
+        <testcontainers.version>1.20.4</testcontainers.version>
+        <wiremock.version>3.9.2</wiremock.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers-bom</artifactId>
+                <version>${testcontainers.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- Web (query API: /event, /run/status, /gate/groups, admin) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <!-- Security (ems-design §4.3 "Auth"): OAuth2 resource server (Entra JWT + group claims) with
+             an HTTP Basic fallback, mirroring the legacy AuthorizationManager modes
+             (Basic / Bearer-JWT-with-group-checks / none). The resource-server starter brings
+             spring-security-oauth2-jose (Nimbus), which also signs the local POST /token. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+        </dependency>
+
+        <!-- Persistence: JdbcClient (no ORM — ems-design §5), Postgres, Flyway -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
+
+        <!-- Kafka ingest: manual ack, ErrorHandlingDeserializer, poison-only DLQ (§4.2 / A1) -->
+        <dependency>
+            <groupId>org.springframework.kafka</groupId>
+            <artifactId>spring-kafka</artifactId>
+        </dependency>
+
+        <!-- Caffeine: context cache (ems-design §4) -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
+
+        <!-- CEL (cel-java, exact version pinned) — subscription evaluation (§7) -->
+        <dependency>
+            <groupId>org.projectnessie.cel</groupId>
+            <artifactId>cel-tools</artifactId>
+            <version>${cel-java.version}</version>
+        </dependency>
+
+        <!-- RFC 8785 (JCS) canonical JSON — the cross-engine dag_run_id anchor (A6).
+             Reference implementation; the celpy/Python side must agree byte-for-byte,
+             which the shared conformance suite (src/test/resources/conformance) enforces. -->
+        <dependency>
+            <groupId>io.github.erdtman</groupId>
+            <artifactId>java-json-canonicalization</artifactId>
+            <version>${jcs.version}</version>
+        </dependency>
+
+        <!-- Observability: Micrometer → OTLP (ems-design §10) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-otlp</artifactId>
+        </dependency>
+
+        <!-- NOTE (§10, azure profile): passwordless Azure PG auth is added when the target
+             environment is wired, via the Spring Cloud Azure BOM + starter:
+               com.azure.spring:spring-cloud-azure-dependencies (BOM, 5.x)
+               com.azure.spring:spring-cloud-azure-starter-jdbc-postgresql
+             Left out of the default build so local/Testcontainers runs need no Azure identity;
+             the JDBC URL properties (authentication=azure) activate it in-cluster. -->
+
+        <!-- ===================== test ===================== -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.kafka</groupId>
+            <artifactId>spring-kafka-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>kafka</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.wiremock</groupId>
+            <artifactId>wiremock-standalone</artifactId>
+            <version>${wiremock.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+            <!-- Surefire runs *Test (unit); Failsafe runs *IT (Testcontainers integration). -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

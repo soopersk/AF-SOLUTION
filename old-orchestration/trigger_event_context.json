@@ -1,0 +1,61 @@
+{
+  "context": {
+    "businessDate": "2026-07-18",
+    "contracts": [],
+    "data": {
+      "CLIENT_VERSION": "JAVA-4.9.0",
+      "companyCodes": [
+        "L582",
+        "3740"
+      ],
+      "dataLoadTimestamp": "2026-07-18T05:50:41Z",
+      "dbsRelevantFlag": "-",
+      "frequency": "DAILY",
+      "functionalAreaCodes": [
+        "PEGS",
+        "NEOR"
+      ],
+      "h3Region": "AMER",
+      "logicalBusinessDate": "2026-07-17",
+      "osUser": "svc_ayj_merivalp",
+      "runSubType": "-",
+      "runType": "BATCH",
+      "runTypeMeg": "BATCH",
+      "workflowId": "864312"
+    },
+    "id": "6d6969cf-d70b-48c2-a379-bd6f460db270",
+    "parentIds": [],
+    "source": "MERIVAL"
+  },
+  "event": {
+    "additionalData": {
+      "APP": "MVL",
+      "CLIENT_VERSION": "JAVA-4.9.0",
+      "DATASET_NAME": "INTERIMPOSTING",
+      "DATASET_UUID": "6b416f29-6438-42dd-9f8a-07887543a809",
+      "ENTITY_CODES": "1161,1218",
+      "FREQUENCY": "DAILY",
+      "H3_REGION": "AMER",
+      "INGESTION_CONTEXT_ID": "4aab71e3-767b-4a20-a752-4c6ca4161",
+      "LBD": "20260717",
+      "OS_USER": "merivalp",
+      "PROCESS": "INTERIMPOSTING_INGESTION",
+      "REGION": "AMER",
+      "RUN_TYPE": "BATCH",
+      "SHORT_NAME": "PROCESS",
+      "STATE": "FINISH",
+      "TYPE": "INGESTION",
+      "WORKFLOW_ID": "864312"
+    },
+    "businessDate": "2026-07-19",
+    "contextId": "6d6969cf-d70b-48c2-a379-bd6f460db270",
+    "eventTimestamp": "2026-07-19T13:16:29.622Z",
+    "id": "946dfc93-d831-4ff3-adfc-93d8314ff3a8",
+    "key": "AMER,BATCH,INTERIMPOSTING_INGESTION,1161,1218",
+    "logicalBusinessDate": "2026-07-17",
+    "name": "D_MVL_AMER_PROCESS_FINISH",
+    "publicationTimestamp": "2026-07-19T13:16:29.719Z",
+    "source": "MERIVAL",
+    "trackingId": "4405b20a-18bb-432b-85b2-0a18bb032b4b"
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "event": {
+  "name": "D_MGDP_GLOBAL_TECH_START",
+  "source": "MEGDP",
+  "key": "root,b5ed861d-0566-45af-a895-6f6b66bda9c0",
+  "eventTimestamp": "2026-07-26T17:27:16.075Z",
+  "publicationTimestamp": "2026-07-26T17:27:16.365Z",
+  "businessDate": "2026-07-26",
+  "logicalBusinessDate": "2026-07-26",
+  "additionalData": {
+    "tenantAbbr": "FRCA",
+    "taskEventType": "STARTED",
+    "bindings": "",
+    "CLIENT_VERSION": "JAVA-4.10.1",
+    "contextId": "b1c80571-dfe7-46c6-aa83-f45f5bf09788",
+    "tenantEnvName": "PRODAT39764NEU",
+    "triggerContextId": "b1c80571-dfe7-46c6-aa83-f45f5bf09788",
+    "taskVersion": "45.29.0",
+    "jobLink": "https://azuredatabricks.net",
+    "environment": "PRODAT39764NEU",
+    "environmentGroup": "PRODAT39764NEU",
+    "OS_USER": "root",
+    "runId": "22a75fd9-331e-4408-8468-59e1acf04bda",
+    "megdpEventType": "task-event",
+    "user": "root",
+    "taskId": "b5ed861d-0566-45af-a895-6f6b66bda9c0",
+    "tenant": "FRCA",
+    "actorSystem": "spark",
+    "deployment": "megdp-2",
+    "successful": "true"
+  },
+  "contextId": "b1c80571-dfe7-46c6-aa83-f45f5bf09788",
+  "trackingId": "4691a974-d575-40dc-91a9-74d575d0dcbc",
+  "id": "863359bb-aafa-43a6-b553-bbaafab3a683"
+},
+  "context": {
+    "id": "b1c80571-dfe7-46c6-aa83-f45f5bf09788",
+    "parentIds": [
+      "279c9e65-a8a1-4eef-9600-535c8e008f8a"
+    ],
+    "contracts": [],
+    "businessDate": "2026-07-26",
+    "publicationTimestamp": "2026-07-26T17:22:34.849302Z",
+    "source": "MEGDP",
+    "data": {
+      "company-code-2": "-",
+      "company-code-1": "2074",
+      "runType": "INTRA",
+      "frequency": "D",
+      "calcType": "B3F",
+      "h3Region": "AMER",
+      "runSubType": "-",
+      "trackingId": "xy5QYfqbL0",
+      "environment-name": "PROD",
+      "enabledComponents": "CapitalPreFilter,SyntheticPosti",
+      "reporting-date": "2026-07-24",
+      "run-category": "CORE",
+      "region": "AMER",
+      "lombardSwitch": "true",
+      "appliedRatingSwitchForInstrument": "False",
+      "cumulus": "true",
+      "dag_id": "amer_d_b3f_dag",
+      "appliedRatingSwitch": "False",
+      "class": "capitalcalcmedium",
+      "timestamp": "2026-07-26T17:22:34.491+0000",
+      "run_id": "manual__2026-07-26T17:22:03.407328+0000",
+      "inputDataContexts": [
+        "279c9e65-a8a1-4eef-9600-535c8e008f"
+      ],
+      "run_number": 2,
+      "correlation_id": "0f987a74-1249-4a68-950b-d85c7b57a7f8"
+    }
+  }
+}

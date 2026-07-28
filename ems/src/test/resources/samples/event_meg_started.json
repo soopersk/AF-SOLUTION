@@ -1,0 +1,12 @@
+{
+  "id": "evt-meg-1",
+  "contextId": "ctx-200",
+  "source": "meg",
+  "additionalData": {
+    "taskId": "task-abc",
+    "taskEventType": "started",
+    "contextId": "ctx-200",
+    "STATE": "START"
+  },
+  "eventTimestamp": "2026-07-17T09:00:00Z"
+}

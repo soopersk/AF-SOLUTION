@@ -1,0 +1,11 @@
+{
+  "id": "evt-mer-1",
+  "contextId": "ctx-300",
+  "source": "merival",
+  "additionalData": {
+    "DATASET_UUID": "ds-uuid-777",
+    "TYPE": "INGESTION",
+    "STATE": "FINISH"
+  },
+  "logicalBusinessDate": "2026-07-17"
+}

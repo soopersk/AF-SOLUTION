@@ -1,0 +1,54 @@
+{
+  "$comment": [
+    "CROSS-ENGINE CONFORMANCE VECTORS — authoritative source of truth for the A6 trigger",
+    "identity. BOTH engines load THIS file and must pass every vector:",
+    "  - EMS (Java):      ems/src/test/java/.../canonical/CanonicalConformanceTest.java",
+    "  - framework (Py):  orchestration/common (celpy side) — mirrored test, added when F0 unblocks.",
+    "Contract:  canonical_json = RFC 8785 (JCS);  orch_sha1(s) = lowercase-hex SHA-1 over the",
+    "UTF-8 bytes of s;  dag_run_id = orch_sha1(dag_id + canonical_json(conf))[:16].",
+    "dag_id is concatenated directly to canonical_json(conf) with NO separator.",
+    "To ADD a vector: write conf (any key order), compute expected_jcs by the JCS rules, then",
+    "expected_dag_run_id = first16( sha1hex( dag_id + expected_jcs ) ).",
+    "Keep ASCII-only unless the number/unicode edge is deliberately being pinned on both engines."
+  ],
+  "spec": {
+    "canonical_json": "RFC 8785 (JCS)",
+    "orch_sha1": "lowercase hex SHA-1 over UTF-8 bytes",
+    "dag_run_id": "orch_sha1(dag_id + canonical_json(conf))[:16]",
+    "run_id_length": 16
+  },
+  "vectors": [
+    {
+      "name": "flat-string-keys-reordered",
+      "note": "keys given out of order; JCS must sort portfolio_id < reporting_date",
+      "dag_id": "amer_d_b3f_dag",
+      "conf": { "reporting_date": "2026-07-17", "portfolio_id": "PF-123" },
+      "expected_jcs": "{\"portfolio_id\":\"PF-123\",\"reporting_date\":\"2026-07-17\"}",
+      "expected_dag_run_id": "e8a324c84502fa07"
+    },
+    {
+      "name": "integer-and-boolean",
+      "note": "integer serialized without decimal/exponent; boolean literal; keys sorted",
+      "dag_id": "portfolio_daily_dag",
+      "conf": { "region": "AMER", "enabled": true, "count": 10 },
+      "expected_jcs": "{\"count\":10,\"enabled\":true,\"region\":\"AMER\"}",
+      "expected_dag_run_id": "a70198664f072a88"
+    },
+    {
+      "name": "nested-object-and-array",
+      "note": "nested object keys sorted (x<y); array order preserved [3,1,2]; top-level a<z",
+      "dag_id": "consenrichment_daily_dag",
+      "conf": { "z": [3, 1, 2], "a": { "y": "1", "x": "2" } },
+      "expected_jcs": "{\"a\":{\"x\":\"2\",\"y\":\"1\"},\"z\":[3,1,2]}",
+      "expected_dag_run_id": "6d02176510a6e53a"
+    },
+    {
+      "name": "empty-string-and-null",
+      "note": "empty string retained; JSON null retained; keys sorted a<b",
+      "dag_id": "nsfr_m_dag",
+      "conf": { "b": null, "a": "" },
+      "expected_jcs": "{\"a\":\"\",\"b\":null}",
+      "expected_dag_run_id": "042764d00a463ad4"
+    }
+  ]
+}

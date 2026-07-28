@@ -1,0 +1,82 @@
+{
+  "event": {
+    "name": "D_CAPI_SWITZERLAND_TASK_FINISH",
+    "source": "MEGDP",
+    "key": "root,capitalcalcmedium",
+    "eventTimestamp": "2026-07-27T15:28:21.764Z",
+    "publicationTimestamp": "2026-07-27T15:28:21.781Z",
+    "businessDate": "2026-07-27",
+    "logicalBusinessDate": "2026-07-24",
+    "additionalData": {
+      "APP": "CAPI",
+      "OS_USER": "root",
+      "FREQUENCY": "DAILY",
+      "CLIENT_VERSION": "JAVA-4.10.1",
+      "STATE": "FINISH",
+      "type": "CALC_EVENT",
+      "tenant": "FRCA",
+      "SHORT_NAME": "TASK",
+      "REGION": "SWITZERLAND",
+      "trackingId": "IvsX000L88"
+    },
+    "contextId": "17a1325e-071a-46d3-aa6d-479812f5ff53",
+    "trackingId": "4c793b23-5951-4255-b93b-235951925507",
+    "id": "e2616ed2-4483-428f-a16e-d24483f28fbc"
+  },
+  "context": {
+    "id": "17a1325e-071a-46d3-aa6d-479812f5ff53",
+    "parentIds": [
+      "bfc62d19-92e0-4955-8a9b-6187da9f8f2b"
+    ],
+    "contracts": [],
+    "businessDate": "2026-07-27",
+     "source": "MEGDP",
+    "data": {
+      "resolvedComponents": "capitalprefiltercomponent, syntheticpostingg",
+      "runCategory": "CORE",
+      "type": "CALCULATOR-TASK",
+      "frequency": "D",
+      "duration": "31",
+      "regionCode": "ZURI",
+      "taskState": "finished",
+      "inputVolumes": {
+        "RISK_IB_TRADED_PRODUCTS_LGD_V1": 407869
+      },
+      "companyCodes": [
+        "3042"
+      ],
+      "startTime": "2026-07-27T14:56:34.558+0000",
+      "tenant": "FINRCA",
+      "timestamp": "2026-07-27T14:51:57.053+0000",
+      "trackingId": "IvsX000L88",
+      "outputVolumes": {
+        "OUTPUTCOLLATERAL": 316963,
+        "CAPITALPOSTING_V1": 9196318
+      },
+      "CLIENT_VERSION": "JAVA-4.10.1",
+      "numberOfExecutors": "8",
+      "taskVersion": "47.9.0",
+      "environment": "PRD",
+      "inputDataContexts": [
+        "065ce8a3-df11-4181-bc60-2e3d7836a350"
+      ],
+      "commonLogicVersion": "80.2.0",
+      "fullRun": "false",
+      "reportingDate": "2026-07-24",
+      "runId": "ef5216b4-8508-47ba-9b0e-b4af37355629",
+      "endTime": "2026-07-27T15:28:18.230+0000",
+      "taskId": "b5ed861d-0566-45af-a895-6f6b66bda9c0",
+      "inputDataFilter": {
+        "INTERIMPOSTING": [
+          {
+            "companyCode": [
+              "3042"
+            ],
+            "contextId": "065ce8a3-df11-4181-bc60-2e3d7836a350",
+            "megdp_platform_rec_timestamp": 1785163548
+          }
+        ]
+      }
+    }
+  }
+}
