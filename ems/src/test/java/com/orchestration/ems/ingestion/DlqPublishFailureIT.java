@@ -42,6 +42,8 @@ import org.springframework.util.backoff.FixedBackOff;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orchestration.ems.support.AbstractPostgresIT;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 /**
  * The Batch-I DLQ-publish-failure drill (ems-design §4.2/§10; §13 exit gate): the dead-letter publish is the
@@ -165,8 +167,13 @@ class DlqPublishFailureIT extends AbstractPostgresIT {
         }
 
         @Bean
-        EventConsumer eventConsumer(IngestionService ingestionService) {
-            return new EventConsumer(ingestionService);
+        MeterRegistry meterRegistry() {
+            return new SimpleMeterRegistry();
+        }
+
+        @Bean
+        EventConsumer eventConsumer(IngestionService ingestionService, MeterRegistry meterRegistry) {
+            return new EventConsumer(ingestionService, meterRegistry);
         }
     }
 }

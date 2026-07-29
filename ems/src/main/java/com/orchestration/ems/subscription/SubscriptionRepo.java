@@ -32,6 +32,10 @@ public class SubscriptionRepo {
             WHERE enabled = true
             """;
 
+    private static final String DISTINCT_ENABLED_VERSIONS = """
+            SELECT DISTINCT registry_version FROM subscription WHERE enabled = true
+            """;
+
     private static final String UPSERT = """
             INSERT INTO subscription
                 (tenant_id, stage, rule_name, control_dag_id, when_cel, registry_version, enabled,
@@ -70,6 +74,17 @@ public class SubscriptionRepo {
                         rs.getString("registry_version"),
                         rs.getBoolean("enabled")))
                 .list();
+    }
+
+    /**
+     * The distinct {@code registry_version} values currently in force, i.e. across enabled rows only —
+     * the series set behind {@code ems_registry_version{component,version}} (§10). More than one value
+     * means a partially-applied registry render, which the divergence alert catches.
+     *
+     * @return the distinct enabled registry versions (empty when the table has no enabled rows)
+     */
+    public List<String> distinctEnabledRegistryVersions() {
+        return jdbc.sql(DISTINCT_ENABLED_VERSIONS).query(String.class).list();
     }
 
     /**

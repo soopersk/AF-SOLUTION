@@ -1,9 +1,6 @@
 package com.orchestration.ems.dispatch;
 
-import java.sql.Timestamp;
-import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -45,10 +42,6 @@ public class OutboxRepo {
     private static final String RECORD_ATTEMPT = """
             UPDATE dag_trigger_outbox SET attempts = attempts + 1, last_error = ?
             WHERE dag_run_id = ?
-            """;
-
-    private static final String OLDEST_PENDING = """
-            SELECT min(created_at) FROM dag_trigger_outbox WHERE delivered_at IS NULL
             """;
 
     private final JdbcClient jdbc;
@@ -107,15 +100,7 @@ public class OutboxRepo {
         return jdbc.sql(RECORD_ATTEMPT).param(error).param(dagRunId).update();
     }
 
-    /**
-     * The creation time of the oldest still-undelivered row, or empty when the outbox is fully drained.
-     * Feeds the dispatcher's {@code ems_outbox_pending_age_seconds} gauge (§12) — a rising age is the
-     * signal that delivery is stalled (e.g. Airflow down).
-     */
-    public Optional<Instant> oldestPendingCreatedAt() {
-        Timestamp oldest = jdbc.sql(OLDEST_PENDING)
-                .query((rs, rowNum) -> rs.getTimestamp(1))
-                .single();
-        return Optional.ofNullable(oldest).map(Timestamp::toInstant);
-    }
+    // The oldest-pending-age query is deliberately NOT here. It backs a gauge that must be published on
+    // pods that never dispatch (§11 shadow), so it belongs to recon.ReconRepository — see the ownership
+    // note on OutboxDispatcher.
 }

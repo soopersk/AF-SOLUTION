@@ -2,7 +2,7 @@
 
 **Version:** 1.0 · **Date:** 2026-07-27
 **Status of the system described:** Phases 1–3 (partial) implemented; see [§2 Implementation Status](#2-implementation-status).
-**Authoritative design source:** [`ems-design.md`](../ems-design.md) (approved design, amendments A1–A10).
+**Authoritative design source:** [`ems-design.md`](../ems-design.md) (approved design, amendments A1–A15).
 **Companion document:** [`ems-user-guide.md`](ems-user-guide.md) (task-oriented guide for API consumers and operators).
 
 > **Precedence.** This specification describes what the design mandates *and* what the code in [`ems/`](../ems/) actually does. Where the two differ (deferred work, provisional stubs), the difference is called out explicitly rather than smoothed over. Where this document is silent, [`ems-design.md`](../ems-design.md) governs; where that is silent, [`trigger_redesign_final_implementation_plan.md`](../trigger_redesign_final_implementation_plan.md) governs.
@@ -15,7 +15,7 @@
 2. [Implementation status](#2-implementation-status)
 3. [System context](#3-system-context)
 4. [Architecture](#4-architecture)
-5. [Binding invariants (amendments A1–A10)](#5-binding-invariants-amendments-a1a10)
+5. [Binding invariants (amendments A1–A15)](#5-binding-invariants-amendments-a1a15)
 6. [Data model](#6-data-model)
 7. [Ingestion pipeline](#7-ingestion-pipeline)
 8. [Level-0 subscription engine](#8-level-0-subscription-engine)
@@ -251,9 +251,9 @@ Root package: `com.orchestration.ems`.
 
 ---
 
-## 5. Binding invariants (amendments A1–A10)
+## 5. Binding invariants (amendments A1–A15)
 
-These ten amendments are **normative**. A1–A5 are design-level; A6–A10 were derived by reading the legacy sources (`old-ems/`, `old-orchestration/`) and correct earlier plan text. Every one has a concrete enforcement point in the code.
+These fifteen amendments are **normative**. A1–A5 are design-level; A6–A10 were derived by reading the legacy sources (`old-ems/`, `old-orchestration/`) and correct earlier plan text; A11–A14 were added at the start of Phase 4 (2026-07-28) — A11 from reading the build's own config against its own classpath, A12–A14 from re-reading `old-ems/` for the `seed-0` translation — and A15 was taken as a product decision at the Batch-0 checkpoint, superseding A13's remedy. Every one has a concrete enforcement point in the code.
 
 | # | Invariant | Enforced by | Verified by |
 |---|---|---|---|
@@ -267,6 +267,11 @@ These ten amendments are **normative**. A1–A5 are design-level; A6–A10 were 
 | **A8** | Cross-family key spellings COALESCE: `reporting-date\|reportingDate`, `run-category\|runCategory`, `h3Region\|regionCode` | `V1__event_context.sql` context columns; `Normalizer#normalizeContext` | `FlywayMigrationIT`, `NormalizerTest` |
 | **A9** | `parentIds` is **array-containment** queried, not element-0 — GIN `jsonb_path_ops`, no scalar `first_parent_id` column | `V2__indexes.sql` `idx_context_parent_ids`; `json->'parentIds' @> to_jsonb(?::text)` in `EventQueryRepository`/`ContextQueryRepository` | `ContextQueryIT`, `EventQueryRepositoryIT` |
 | **A10** | `GET /event` matches each non-id param across **four JSON locations** (`event`, `event.additionalData`, `context`, `context.data`), case-sensitive, `\|`-multivalue OR — there is **no** param→column alias map | `EventQueryRepository.OTHER_TEMPLATE`, `GateGroupsRepository.CRITERION_TEMPLATE` | `EventControllerTest`, `EventQueryRepositoryIT` |
+| **A11** | Observability transport is **Prometheus pull** (`/actuator/prometheus` + `ServiceMonitor`), not OTLP push; the §17 alert set ships as a `PrometheusRule` **in the Helm chart**. OTLP stays on the classpath, export off by default | `pom.xml` (`micrometer-registry-prometheus`), `application.yml` (`management.otlp.metrics.export.enabled: false`), `deploy/helm/ems/templates/servicemonitor.yaml` + `prometheusrule.yaml` | `MetricNamingTest`, `AlertRuleCoverageTest`, the CI `helm` job |
+| **A12** | The legacy `filter.post` **property** (admission) and `post_filter_control_dag_map` **table** (routing) are **not redundant**. Since no `filter.post` row exists in the evidence, `PERSIST ⊇ FORWARD` is a **hard correctness requirement** of `seed-0`, not a CI nicety | `V6__subscription_seed0.sql` (PERSIST rows written to cover every FORWARD row); `SubscriptionService#forwardImpliesPersist` | `Seed0MigrationTest` (invariant asserted over the sample payloads) |
+| **A13** | CEL is case-sensitive in **keys and values**; the legacy engine was case-insensitive in both. The `Normalizer` is **not** widened to compensate (it would destroy the ≈-zero `ems_normalization_mutations_total` signal, §9.4). ~~`seed-0` rules carry an explicit `.lowerAscii()` fold and `has()`-guarded either-spelling key access~~ — **remedy superseded by A15** | `Normalizer` deliberately unchanged | `MatchViewTest` (the fold is where the case-sensitivity is answered) |
+| **A14** | The **FORWARD** half of the `seed-0` translation is a signed-off **interpretation**, not a mechanical port (the map-table condition grammar has no parser in the workspace). The PERSIST half remains mechanical | [`docs/ems-seed0-assumptions.md`](ems-seed0-assumptions.md) — one numbered assumption per departure from the literal legacy text, each with a sign-off box | **Human gate.** `Seed0MigrationTest` asserts only that every assumed row carries its `ASSUMPTION-n` citation — it cannot assert correctness |
+| **A15** | Subscription CEL evaluates against a **case-folded matching view**: every object key and every string value in the activation tree is lower-cased recursively, so rule text is all-lowercase paths + all-lowercase literals + plain `==` — no `.lowerAscii()`, no `has()` guards, no either-spelling branches. Routing path **only**: stored JSONB, generated columns, `/run/status`, `/gate/groups` and the Airflow `conf` are untouched, and the fold is **not** in `Normalizer` | `subscription/MatchView#fold`, applied in `SubscriptionService#eventMap`/`#contextMap` after normalization | `MatchViewTest`, `SubscriptionServiceTest`, `Seed0MigrationTest` |
 
 ### 5.1 A10's consequence for query-parameter canonicalization
 
@@ -1259,7 +1264,7 @@ Micrometer → OpenTelemetry (`micrometer-registry-otlp`). Actuator exposes `hea
 | `ems_dlq_depth{topic}` | gauge | ⏳ planned (`ReconciliationSweep`) | **page** — > 0 for 5 min |
 | `ems_consumer_lag{topic,partition}` (+ headroom vs retention) | gauge | ⏳ planned | **page** on sustained lag; **page early** when lag age approaches retention |
 | `ems_overdue_inflight_runs` | gauge | ⏳ planned | **warn** — STARTED events with no terminal past a coarse global window |
-| `ems_registry_version_info{component}` | info | ⏳ planned (Phase B+) | **warn** — divergence > 30 min |
+| `ems_registry_version{component,version}` | info-gauge | ⏳ planned (Phase B+) | **warn** — divergence > 30 min |
 | Per-endpoint latency histograms (`/event`, `/run/status`, `/gate/groups`) | histogram | Actuator | **warn** — p95 regression |
 
 > Metrics marked ⏳ require `recon/ReconciliationSweep`, which is Phase-4 work and currently a documentation stub.
@@ -1530,4 +1535,4 @@ Boundary events processed by **both** services derive the same `dag_run_id` from
 
 ---
 
-*Specification derived from [`ems-design.md`](../ems-design.md) (approved design, amendments A1–A10) and the implementation in [`ems/`](../ems/) as of 2026-07-27. Statements about behaviour reflect the code as read; statements about verification reflect what has actually been executed — the local build runs unit tests only, and the integration suite awaits CI.*
+*Specification derived from [`ems-design.md`](../ems-design.md) (approved design, amendments A1–A15) and the implementation in [`ems/`](../ems/) as of 2026-07-27. Statements about behaviour reflect the code as read; statements about verification reflect what has actually been executed — the local build runs unit tests only, and the integration suite awaits CI.*

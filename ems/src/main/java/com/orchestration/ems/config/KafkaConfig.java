@@ -28,6 +28,9 @@ import org.springframework.kafka.support.serializer.DeserializationException;
 import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
 
 import com.orchestration.ems.ingestion.DlqRecorder;
+import com.orchestration.ems.ingestion.IngestOutcome;
+
+import io.micrometer.core.instrument.MeterRegistry;
 
 import org.springframework.util.backoff.FixedBackOff;
 
@@ -106,7 +109,7 @@ public class KafkaConfig {
      */
     @Bean
     public DefaultErrorHandler kafkaErrorHandler(KafkaTemplate<String, String> dltKafkaTemplate,
-            DlqRecorder dlqRecorder,
+            DlqRecorder dlqRecorder, MeterRegistry meterRegistry,
             @Value("${ems.consumer.park-backoff-ms:5000}") long parkBackoffMs) {
 
         DeadLetterPublishingRecoverer publisher = new DeadLetterPublishingRecoverer(dltKafkaTemplate,
@@ -116,6 +119,11 @@ public class KafkaConfig {
         DefaultErrorHandler handler = new DefaultErrorHandler((record, ex) -> {
             publisher.accept(record, ex);            // authoritative verified publish (may throw ⇒ redeliver)
             dlqRecorder.record(record, unwrap(ex));  // best-effort triage row (swallows its own failures)
+            // The fourth ems_events_consumed_total outcome (§10). Counted after the verified publish, so a
+            // record that failed to reach the DLQ — and will therefore redeliver — is not counted as consumed.
+            meterRegistry.counter(IngestOutcome.METRIC,
+                    IngestOutcome.TAG_TOPIC, record.topic(),
+                    IngestOutcome.TAG_OUTCOME, IngestOutcome.POISON).increment();
             log.warn("Dead-lettered {}-{}@{} to {}{}", record.topic(), record.partition(), record.offset(),
                     record.topic(), DLQ_SUFFIX);
         }, new FixedBackOff(parkBackoffMs, FixedBackOff.UNLIMITED_ATTEMPTS));

@@ -53,6 +53,7 @@ class IngestionServiceTest {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final String DAG_CAPITAL = "orchestration_control_dag_capital";
     private static final String DAG_LIQUIDITY = "orchestration_control_dag_liquidity";
+    private static final String VERDICT_METRIC = "ems_subscription_verdicts_total";
 
     private SubscriptionService subscription;
     private ContextResolver resolver;
@@ -86,19 +87,21 @@ class IngestionServiceTest {
                 {"id":"evt-noise","source":"FIREHOSE","additionalData":{"msgTypeEventType":"HEARTBEAT"}}""";
         when(subscription.persistMatches(any())).thenReturn(false);
 
-        service.process(raw);
+        assertThat(service.process(raw)).isEqualTo(IngestOutcome.DROPPED);
 
         assertThat(dropCount("FIREHOSE")).isEqualTo(1.0);
         verify(subscription, never()).forwardMatches(any());
         verifyNoInteractions(resolver, eventRepo, contextRepo, decisionRepo, outboxRepo);
+        // a dropped event produced no decision row, so it must produce no verdict either
+        assertThat(meters.find(VERDICT_METRIC).counters()).isEmpty();
     }
 
     @Test
     void zeroMatch_missingSource_countsUnknown() {
         when(subscription.persistMatches(any())).thenReturn(false);
 
-        service.process("""
-                {"id":"evt-nosrc","additionalData":{"x":"y"}}""");
+        assertThat(service.process("""
+                {"id":"evt-nosrc","additionalData":{"x":"y"}}""")).isEqualTo(IngestOutcome.DROPPED);
 
         assertThat(dropCount("unknown")).isEqualTo(1.0);
     }
@@ -119,7 +122,12 @@ class IngestionServiceTest {
         when(subscription.forwardMatches(any())).thenReturn(matches);
         when(eventRepo.upsert(any())).thenReturn(1);
 
-        service.process(raw);
+        assertThat(service.process(raw)).isEqualTo(IngestOutcome.PERSISTED);
+
+        // §10: one FORWARDED verdict per match, tagged by tenant — the in-flight mirror of the rows below
+        assertThat(verdictCount("CAPITAL", "FORWARDED")).isEqualTo(1.0);
+        assertThat(verdictCount("LIQUIDITY", "FORWARDED")).isEqualTo(1.0);
+        assertThat(verdictCount("none", "NOT_SUBSCRIBED")).isZero();
 
         // stage ordering: gate → resolve → forward → event → context → decisions → outbox
         InOrder ord = Mockito.inOrder(subscription, resolver, eventRepo, contextRepo, decisionRepo, outboxRepo);
@@ -159,7 +167,9 @@ class IngestionServiceTest {
         when(subscription.forwardMatches(any())).thenReturn(List.of());
         when(eventRepo.upsert(any())).thenReturn(1);
 
-        service.process(raw);
+        assertThat(service.process(raw)).isEqualTo(IngestOutcome.PERSISTED);
+
+        assertThat(verdictCount("none", "NOT_SUBSCRIBED")).isEqualTo(1.0);
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Collection<L0Decision>> decisions = ArgumentCaptor.forClass(Collection.class);
@@ -186,12 +196,15 @@ class IngestionServiceTest {
                 .thenReturn(List.of(new SubscriptionMatch("CAPITAL", DAG_CAPITAL, "cap.rule", "seed-0")));
         when(eventRepo.upsert(any())).thenReturn(0); // already persisted (ON CONFLICT DO NOTHING)
 
-        service.process(raw);
+        assertThat(service.process(raw)).isEqualTo(IngestOutcome.DUPLICATE);
 
         verify(eventRepo).upsert(any());
         verify(contextRepo, never()).upsert(any());
         verify(decisionRepo, never()).insertL0Batch(any());
         verifyNoInteractions(outboxRepo);
+        // the redelivery wrote no decision row, so it must add no verdict — otherwise the counter
+        // drifts permanently above the routing_decision table on every replay
+        assertThat(meters.find(VERDICT_METRIC).counters()).isEmpty();
     }
 
     @Test
@@ -210,5 +223,12 @@ class IngestionServiceTest {
 
     private double dropCount(String source) {
         return meters.get("ems_events_dropped_total").tag("source", source).counter().count();
+    }
+
+    /** {@code ems_subscription_verdicts_total{tenant,decision}}, 0 when that series was never created. */
+    private double verdictCount(String tenant, String decision) {
+        var counter = meters.find(VERDICT_METRIC)
+                .tag("tenant", tenant).tag("decision", decision).counter();
+        return counter == null ? 0.0 : counter.count();
     }
 }

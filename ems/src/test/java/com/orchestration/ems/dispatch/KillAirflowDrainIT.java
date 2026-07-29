@@ -8,6 +8,7 @@ import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.net.http.HttpClient;
+import java.time.Duration;
 import java.util.function.Supplier;
 
 import javax.sql.DataSource;
@@ -24,6 +25,8 @@ import org.springframework.web.client.RestClient;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.tomakehurst.wiremock.WireMockServer;
+import com.orchestration.ems.recon.ReconRepository;
+import com.orchestration.ems.recon.ReconciliationSweep;
 import com.orchestration.ems.support.AbstractPostgresIT;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -39,6 +42,11 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
  * wall-clock waits: while Airflow returns 503 every row stays undelivered with a growing {@code attempts},
  * and the {@code ems_outbox_pending_age_seconds} gauge reports a non-empty backlog; once Airflow returns 200
  * a single drain delivers every row and the gauge falls back to zero.
+ *
+ * <p><b>The gauge is read from {@link ReconciliationSweep}, not from the dispatcher.</b> That is the point
+ * of the ownership move: the backlog signal comes from an observer that does not depend on the component
+ * under failure. A dispatcher that is wedged — or, in {@code shadow}, absent entirely — still gets its
+ * backlog reported.
  */
 class KillAirflowDrainIT extends AbstractPostgresIT {
 
@@ -53,6 +61,7 @@ class KillAirflowDrainIT extends AbstractPostgresIT {
     private OutboxRepo repo;
     private SimpleMeterRegistry meters;
     private OutboxDispatcher dispatcher;
+    private ReconciliationSweep sweep;
 
     @BeforeAll
     static void startAirflow() {
@@ -83,7 +92,9 @@ class KillAirflowDrainIT extends AbstractPostgresIT {
         Supplier<String> noAuth = () -> "";
         AirflowTriggerClient triggerClient =
                 new AirflowTriggerClient(restClient, MAPPER, noAuth, "/dags/{dagId}/dagRuns");
-        dispatcher = new OutboxDispatcher(repo, triggerClient, meters, txManager, 100, 0, 0);
+        dispatcher = new OutboxDispatcher(repo, triggerClient, txManager, 100, 0, 0);
+        sweep = new ReconciliationSweep(new ReconRepository(jdbc), meters,
+                Duration.ofHours(6), Duration.ofDays(7));
     }
 
     @Test
@@ -131,7 +142,9 @@ class KillAirflowDrainIT extends AbstractPostgresIT {
                 .query(Integer.class).single();
     }
 
+    /** One recon tick, then the gauge it published — the operator's view, not the dispatcher's. */
     private double gauge() {
-        return meters.get(OutboxDispatcher.PENDING_AGE_METRIC).gauge().value();
+        sweep.sweep();
+        return meters.get(ReconciliationSweep.OUTBOX_AGE_METRIC).gauge().value();
     }
 }

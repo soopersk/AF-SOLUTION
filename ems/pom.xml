@@ -118,10 +118,17 @@
             <version>${jcs.version}</version>
         </dependency>
 
-        <!-- Observability: Micrometer → OTLP (ems-design §10) -->
+        <!-- Observability (ems-design §10, Amendment A11: Prometheus PULL is the transport).
+             The prometheus registry is what makes /actuator/prometheus exist — without it the
+             endpoint exposed in application.yml is a no-op. OTLP stays on the classpath but its
+             export is disabled by default; it is one property away for a collector environment. -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
         <dependency>
             <groupId>io.micrometer</groupId>

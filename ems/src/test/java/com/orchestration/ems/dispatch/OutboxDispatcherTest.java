@@ -12,7 +12,6 @@ import static org.mockito.Mockito.when;
 
 import java.time.Duration;
 import java.util.List;
-import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,8 +23,6 @@ import org.springframework.transaction.PlatformTransactionManager;
 
 import com.orchestration.ems.dispatch.AirflowTriggerClient.Outcome;
 
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-
 /**
  * Unit proof of {@link OutboxDispatcher}'s mark/retain/backoff decisions with the repo and Airflow client
  * mocked (the real Postgres + WireMock drain is Batch I's {@code KillAirflowDrainIT}):
@@ -36,6 +33,10 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
  *   <li>the {@code @ConditionalOnProperty} gate means no dispatcher bean (hence no drain / no calls)
  *       unless {@code ems.dispatch.enabled=true}.</li>
  * </ul>
+ *
+ * <p>No metric assertions live here any more: {@code ems_outbox_pending_age_seconds} moved to
+ * {@code recon.ReconciliationSweep} so that it is published in {@code shadow} too, where this bean does
+ * not exist. Its coverage is {@code ReconciliationSweepTest} / {@code ReconRepositoryIT}.
  */
 class OutboxDispatcherTest {
 
@@ -50,9 +51,7 @@ class OutboxDispatcherTest {
     void setUp() {
         outboxRepo = mock(OutboxRepo.class);
         triggerClient = mock(AirflowTriggerClient.class);
-        when(outboxRepo.oldestPendingCreatedAt()).thenReturn(Optional.empty());
-        dispatcher = new OutboxDispatcher(outboxRepo, triggerClient, new SimpleMeterRegistry(),
-                noOpTransactionManager(), 100, 30, 600);
+        dispatcher = new OutboxDispatcher(outboxRepo, triggerClient, noOpTransactionManager(), 100, 30, 600);
     }
 
     @Test
@@ -118,11 +117,6 @@ class OutboxDispatcherTest {
         @Bean
         AirflowTriggerClient airflowTriggerClient() {
             return mock(AirflowTriggerClient.class);
-        }
-
-        @Bean
-        SimpleMeterRegistry meterRegistry() {
-            return new SimpleMeterRegistry();
         }
 
         @Bean

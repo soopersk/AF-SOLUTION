@@ -15,6 +15,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import com.orchestration.ems.canonical.DagRunId;
 import com.orchestration.ems.decisions.L0Decision;
+import com.orchestration.ems.decisions.L0Decision.Verdict;
 import com.orchestration.ems.decisions.RoutingDecisionRepo;
 import com.orchestration.ems.dispatch.OutboxRepo;
 import com.orchestration.ems.model.ContextRow;
@@ -67,6 +68,11 @@ public class IngestionService {
     private static final String DROP_METRIC = "ems_events_dropped_total";
     private static final String UNKNOWN_SOURCE = "unknown";
 
+    /** §10: the L0 verdict counter, the in-flight mirror of the {@code routing_decision} rows. */
+    private static final String VERDICT_METRIC = "ems_subscription_verdicts_total";
+    /** Tag value standing in for the null tenant of a {@code NOT_SUBSCRIBED} verdict. */
+    private static final String NO_TENANT = "none";
+
     private final ObjectMapper mapper;
     private final SubscriptionService subscriptionService;
     private final ContextResolver contextResolver;
@@ -97,17 +103,20 @@ public class IngestionService {
      * Process one raw upstream event end-to-end (§4.2).
      *
      * @param rawJson the exact JSON text received from Kafka (stored byte-verbatim)
-     * @throws IllegalArgumentException  if {@code rawJson} is not valid JSON (poison — Batch G routes to DLQ)
+     * @return what the pipeline did with the record — the {@code outcome} dimension of
+     *         {@code ems_events_consumed_total}, counted by the caller ({@link EventConsumer}) so that
+     *         the topic tag stays where the topic is known
+     * @throws IllegalArgumentException  if {@code rawJson} is not valid JSON (poison — routed to DLQ)
      * @throws EdfUnavailableException   if context resolution hits a transient EDF outage (park signal)
      */
-    public void process(String rawJson) {
+    public IngestOutcome process(String rawJson) {
         EventRow event = EventRow.of(rawJson, mapper);
 
         // Stage 1: persist gate (event fields only). Zero matches ⇒ drop (count, ack, done).
         if (!subscriptionService.persistMatches(event)) {
             meterRegistry.counter(DROP_METRIC, "source", sourceOf(event)).increment();
             log.debug("Dropped event {} at persist gate (source={})", event.eventId(), sourceOf(event));
-            return;
+            return IngestOutcome.DROPPED;
         }
 
         // Resolve + enrich (outside the TX: an EDF outage parks before any write).
@@ -118,7 +127,34 @@ public class IngestionService {
         // Stage 2: forward fan-out over (event, context).
         List<SubscriptionMatch> matches = subscriptionService.forwardMatches(enriched);
 
-        persist(event, context.orElse(null), enriched, matches);
+        if (!persist(event, context.orElse(null), enriched, matches)) {
+            return IngestOutcome.DUPLICATE;
+        }
+        countVerdicts(matches);
+        return IngestOutcome.PERSISTED;
+    }
+
+    /**
+     * Mirror the L0 decision rows onto {@code ems_subscription_verdicts_total{tenant,decision}}: one
+     * {@code FORWARDED} per match, or a single {@code NOT_SUBSCRIBED} when nothing matched — the same
+     * shape {@link #decisions(String, List)} writes, so the counter and the {@code routing_decision}
+     * table can be reconciled against each other.
+     *
+     * <p>Called only on the {@link IngestOutcome#PERSISTED} path, after the transaction commits. That
+     * matters twice over: a redelivery writes no decision rows, so it must add no verdicts either
+     * (otherwise the counter drifts above the table on every replay), and a rolled-back transaction
+     * must not leave counts behind for decisions that do not exist.
+     */
+    private void countVerdicts(List<SubscriptionMatch> matches) {
+        if (matches.isEmpty()) {
+            meterRegistry.counter(VERDICT_METRIC,
+                    "tenant", NO_TENANT, "decision", Verdict.NOT_SUBSCRIBED.name()).increment();
+            return;
+        }
+        for (SubscriptionMatch match : matches) {
+            meterRegistry.counter(VERDICT_METRIC,
+                    "tenant", match.tenantId(), "decision", Verdict.FORWARDED.name()).increment();
+        }
     }
 
     /**
@@ -127,15 +163,18 @@ public class IngestionService {
      * <p>The event upsert is the idempotency guard: when it inserts nothing (redelivery of an already
      * persisted event), the decisions and outbox — committed atomically on the first delivery — are
      * skipped, which is also what makes the null-tenant {@code NOT_SUBSCRIBED} row redelivery-safe.
+     *
+     * @return {@code true} if the event was new (decisions and outbox written), {@code false} on the
+     *         redelivery no-op — the {@link IngestOutcome#PERSISTED}/{@link IngestOutcome#DUPLICATE} split
      */
-    private void persist(EventRow event, ContextRow context, EnrichedEvent enriched,
+    private boolean persist(EventRow event, ContextRow context, EnrichedEvent enriched,
             List<SubscriptionMatch> matches) {
-        txTemplate.executeWithoutResult(status -> {
+        return Boolean.TRUE.equals(txTemplate.execute(status -> {
             int inserted = eventRepository.upsert(event);
             if (inserted == 0) {
                 log.debug("Event {} already persisted; skipping decisions/outbox (redelivery no-op)",
                         event.eventId());
-                return;
+                return false;
             }
             // Context is typically already persisted (resolver save-on-fetch, or it came from the DB);
             // upserting here keeps the atomic write self-contained (§4.2 step 5) and is an idempotent no-op.
@@ -144,7 +183,8 @@ public class IngestionService {
             }
             routingDecisionRepo.insertL0Batch(decisions(event.eventId(), matches));
             writeOutbox(enriched, matches);
-        });
+            return true;
+        }));
     }
 
     /**

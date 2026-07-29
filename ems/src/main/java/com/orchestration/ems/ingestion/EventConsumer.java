@@ -8,6 +8,8 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Component;
 
+import io.micrometer.core.instrument.MeterRegistry;
+
 /**
  * The Kafka entry point of the ingestion pipeline (ems-design §4.2 step 1). Consumes EDF event records
  * and delegates each to {@link IngestionService#process(String)}, then acknowledges — <b>manual ack
@@ -22,6 +24,13 @@ import org.springframework.stereotype.Component;
  *
  * <p>Gated by {@code ems.consumer.enabled} (default off) so non-consuming roles (e.g. an API-only pod, or
  * the pre-cutover shadow phase) run without a live listener.
+ *
+ * <p><b>Why the {@code ems_events_consumed_total} counter lives here</b> and not in
+ * {@link IngestionService}: this is the only layer that knows the source topic, and §10 requires the
+ * counter to carry it. Counting happens after {@code process} returns and before the ack, so the only
+ * records it misses are the ones that were not consumed — a poison record (counted by the error
+ * handler's recoverer while dead-lettering) and a parked transient failure (counted by nobody, because
+ * it will be redelivered).
  */
 @Component
 @ConditionalOnProperty(prefix = "ems.consumer", name = "enabled", havingValue = "true")
@@ -30,9 +39,11 @@ public class EventConsumer {
     private static final Logger log = LoggerFactory.getLogger(EventConsumer.class);
 
     private final IngestionService ingestionService;
+    private final MeterRegistry meterRegistry;
 
-    public EventConsumer(IngestionService ingestionService) {
+    public EventConsumer(IngestionService ingestionService, MeterRegistry meterRegistry) {
         this.ingestionService = ingestionService;
+        this.meterRegistry = meterRegistry;
     }
 
     /**
@@ -48,7 +59,10 @@ public class EventConsumer {
         if (log.isTraceEnabled()) {
             log.trace("Consuming {}-{}@{}", record.topic(), record.partition(), record.offset());
         }
-        ingestionService.process(record.value());
+        IngestOutcome outcome = ingestionService.process(record.value());
+        meterRegistry.counter(IngestOutcome.METRIC,
+                IngestOutcome.TAG_TOPIC, record.topic(),
+                IngestOutcome.TAG_OUTCOME, outcome.tagValue()).increment();
         ack.acknowledge();
     }
 }

@@ -41,11 +41,17 @@ import com.orchestration.ems.model.RunStatus;
 @Repository
 public class RunStatusRepository {
 
-    /** Upper-cased {@code state} values that end a MERIVAL_CALC_EVENT lifecycle (framework §333). */
-    private static final String STATE_SUCCESS = "FINISH";
-    private static final String STATE_FAILURE = "FAILED";
+    /**
+     * Upper-cased {@code state} values that end a MERIVAL_CALC_EVENT lifecycle (framework §333).
+     *
+     * <p>These three constants are the <b>single</b> terminal vocabulary in EMS. {@code ReconRepository}
+     * binds them into its {@code ems_overdue_inflight_runs} query rather than restating the literals, so
+     * "this run has finished" can never come to mean two different things in two places.
+     */
+    public static final String STATE_SUCCESS = "FINISH";
+    public static final String STATE_FAILURE = "FAILED";
     /** Upper-cased {@code task_event_type} value that ends a MEG_TASK_EVENT lifecycle (framework §333). */
-    private static final String TASK_TERMINAL = "COMPLETED";
+    public static final String TASK_TERMINAL = "COMPLETED";
 
     private static final String EVENT_SELECT =
             "SELECT event_id, state, task_event_type, "

@@ -35,6 +35,8 @@ import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orchestration.ems.config.KafkaConfig;
 import com.orchestration.ems.support.AbstractPostgresIT;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 /**
  * The Batch-I transient-outage park drill (Amendment A1: transient failures never dead-letter; §13 exit
@@ -128,8 +130,13 @@ class TransientOutageIT extends AbstractPostgresIT {
         }
 
         @Bean
-        EventConsumer eventConsumer(IngestionService ingestionService) {
-            return new EventConsumer(ingestionService);
+        MeterRegistry meterRegistry() {
+            return new SimpleMeterRegistry();
+        }
+
+        @Bean
+        EventConsumer eventConsumer(IngestionService ingestionService, MeterRegistry meterRegistry) {
+            return new EventConsumer(ingestionService, meterRegistry);
         }
     }
 }

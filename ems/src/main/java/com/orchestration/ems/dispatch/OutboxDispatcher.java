@@ -18,9 +18,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import com.orchestration.ems.dispatch.AirflowTriggerClient.Outcome;
 
-import io.micrometer.core.instrument.Gauge;
-import io.micrometer.core.instrument.MeterRegistry;
-
 /**
  * Drains the transactional outbox and delivers each trigger to Airflow (ems-design §4.2 item 7 / §12;
  * Amendment A1: Airflow is triggered asynchronously off the ingest path). Every pod runs a dispatcher;
@@ -39,15 +36,17 @@ import io.micrometer.core.instrument.MeterRegistry;
  * idempotent on the 409 = already-triggered rule, A6).
  *
  * <p>Gated by {@code ems.dispatch.enabled}: a non-dispatching role (API-only pod, shadow phase) runs no drain.
+ *
+ * <p><b>Not the owner of {@code ems_outbox_pending_age_seconds}.</b> That gauge used to be registered here
+ * and so did not exist whenever this bean did not — including the {@code shadow} profile, the one place
+ * where the backlog grows by design. It now belongs to {@code recon.ReconciliationSweep}, which is always
+ * present. Backlog visibility must not be a side effect of the thing that drains the backlog.
  */
 @Component
 @ConditionalOnProperty(prefix = "ems.dispatch", name = "enabled", havingValue = "true")
 public class OutboxDispatcher {
 
     private static final Logger log = LoggerFactory.getLogger(OutboxDispatcher.class);
-
-    /** Age of the oldest undelivered outbox row — a rising value means delivery is stalled (§12). */
-    static final String PENDING_AGE_METRIC = "ems_outbox_pending_age_seconds";
 
     private final OutboxRepo outboxRepo;
     private final AirflowTriggerClient triggerClient;
@@ -59,11 +58,9 @@ public class OutboxDispatcher {
 
     /** dag_run_id → instant it next becomes eligible for another delivery attempt (in-memory backoff gate). */
     private final Map<String, Instant> nextEligible = new ConcurrentHashMap<>();
-    /** Last-observed oldest-pending age, published via the {@link #PENDING_AGE_METRIC} gauge. */
-    private volatile double oldestPendingAgeSeconds;
 
     public OutboxDispatcher(OutboxRepo outboxRepo, AirflowTriggerClient triggerClient,
-            MeterRegistry meterRegistry, PlatformTransactionManager transactionManager,
+            PlatformTransactionManager transactionManager,
             @Value("${ems.dispatch.batch-size:100}") int batchSize,
             @Value("${ems.dispatch.base-backoff-seconds:30}") long baseBackoffSeconds,
             @Value("${ems.dispatch.max-backoff-seconds:600}") long maxBackoffSeconds) {
@@ -73,14 +70,10 @@ public class OutboxDispatcher {
         this.batchSize = batchSize;
         this.baseBackoffSeconds = baseBackoffSeconds;
         this.maxBackoffSeconds = maxBackoffSeconds;
-        Gauge.builder(PENDING_AGE_METRIC, this, d -> d.oldestPendingAgeSeconds)
-                .baseUnit("seconds")
-                .description("Age of the oldest undelivered dag_trigger_outbox row")
-                .register(meterRegistry);
     }
 
     /**
-     * One drain tick: claim and deliver a batch of undelivered rows, then refresh the pending-age gauge.
+     * One drain tick: claim and deliver a batch of undelivered rows.
      * {@code fixedDelay} (not {@code fixedRate}) so a slow Airflow can never overlap two drains on one pod.
      */
     @Scheduled(fixedDelayString = "${ems.dispatch.poll-interval-ms:2000}")
@@ -91,7 +84,6 @@ public class OutboxDispatcher {
                 dispatchOne(trigger);
             }
         });
-        refreshPendingAge();
     }
 
     private void dispatchOne(PendingTrigger trigger) {
@@ -134,11 +126,5 @@ public class OutboxDispatcher {
         long half = capped / 2;
         long jitter = half > 0 ? ThreadLocalRandom.current().nextLong(half + 1) : 0;
         return Duration.ofSeconds(half + jitter);
-    }
-
-    private void refreshPendingAge() {
-        this.oldestPendingAgeSeconds = outboxRepo.oldestPendingCreatedAt()
-                .map(oldest -> Math.max(0.0, Duration.between(oldest, Instant.now()).toMillis() / 1000.0))
-                .orElse(0.0);
     }
 }

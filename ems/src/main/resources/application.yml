@@ -52,6 +52,13 @@ management:
   metrics:
     tags:
       application: ems
+  # A11: Prometheus PULL is the transport — /actuator/prometheus is scraped by the chart's
+  # ServiceMonitor, and the §10 alert column ships as a PrometheusRule beside it. The OTLP
+  # registry stays on the classpath but exports nothing unless an environment turns it back on.
+  otlp:
+    metrics:
+      export:
+        enabled: false
 
 # ---- EMS-specific knobs -----------------------------------------------------
 ems:
@@ -62,6 +69,17 @@ ems:
   consumer:
     # Lets a pod run as query-API-only (no ingest) if ever needed for isolation.
     enabled: true
+  recon:
+    # Out-of-band pollers (§10): the registry-version info gauge and the ReconciliationSweep backstop.
+    # Deliberately ungated — these must publish on a pod that is neither consuming nor dispatching,
+    # which is exactly where things go quietly stuck. `enabled: false` is an explicit opt-out only.
+    enabled: true
+    interval-ms: 60000
+    # ems_overdue_inflight_runs: a run whose last event is older than `overdue-window` and that never
+    # reached a terminal event is counted. `horizon` bounds the lookback so the query rides
+    # idx_event_created_at rather than scanning history — runs older than it have left the window.
+    overdue-window: 6h
+    horizon: 7d
   airflow:
     # Outbox → Airflow REST. Basic-auth creds resolved from Vault in-cluster.
     base-url: ""

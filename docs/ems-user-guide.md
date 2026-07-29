@@ -704,13 +704,13 @@ The Scala consumers resume from **their own frozen offsets** and reprocess the g
 | `ems_normalization_mutations_total{field}` | 🟡 warn | any nonzero | Review before cutover — a nonzero value means EMS is changing live values the existing control DAG expects unchanged |
 | `ems_subscription_verdicts_total{tenant,decision}` | 🟡 warn | tenant volume drop | Check that tenant's rules |
 | `ems_overdue_inflight_runs` | 🟡 warn | STARTED with no terminal past a global window | Loss backstop |
-| `ems_registry_version_info{component}` | 🟡 warn | divergence > 30 min | Phase B+ |
+| `ems_registry_version{component,version}` | 🟡 warn | divergence > 30 min | Phase B+ |
 | Endpoint p95 (`/event`, `/run/status`, `/gate/groups`) | 🟡 warn | regression | Check index usage with `EXPLAIN` |
 | `ems_context_fetch_total{source}` | ℹ️ info | — | `edf` share rising ⇒ cache churn |
 
 **Endpoints:** `/actuator/health/liveness`, `/actuator/health/readiness`, `/actuator/prometheus`, `/actuator/metrics`.
 
-> ⏳ `ems_dlq_depth`, `ems_consumer_lag`, `ems_overdue_inflight_runs` and `ems_registry_version_info` require the `ReconciliationSweep`, which is **not yet implemented**. Four of the alerts above cannot fire today.
+> ⏳ `ems_dlq_depth`, `ems_consumer_lag`, `ems_overdue_inflight_runs` and `ems_registry_version` require the `ReconciliationSweep`, which is **not yet implemented**. Four of the alerts above cannot fire today.
 
 ---
 

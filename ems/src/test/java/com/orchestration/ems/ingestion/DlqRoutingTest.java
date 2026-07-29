@@ -2,6 +2,7 @@ package com.orchestration.ems.ingestion;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.after;
 import static org.mockito.Mockito.doThrow;
@@ -9,6 +10,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.time.Duration;
 import java.util.UUID;
@@ -41,6 +43,9 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 
 import com.orchestration.ems.config.KafkaConfig;
+
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 /**
  * EmbeddedKafka proof of the Batch-G error taxonomy (Amendment A1: DLQ is poison-only), with the DB write
@@ -87,12 +92,15 @@ class DlqRoutingTest {
     private KafkaListenerEndpointRegistry registry;
     @Autowired
     private EmbeddedKafkaBroker broker;
+    @Autowired
+    private MeterRegistry meters;
 
     private KafkaTemplate<String, String> producer;
 
     @BeforeEach
     void setUp() {
         reset(ingestionService, dlqRecorder); // shared beans across ordered methods — clear prior interactions
+        when(ingestionService.process(anyString())).thenReturn(IngestOutcome.PERSISTED);
         producer = new KafkaTemplate<>(new DefaultKafkaProducerFactory<>(
                 KafkaTestUtils.producerProps(broker), new StringSerializer(), new StringSerializer()));
         // one listener container subscribed to both source topics ⇒ two assigned partitions
@@ -120,6 +128,10 @@ class DlqRoutingTest {
         // best-effort triage row written
         verify(dlqRecorder, timeout(5_000)).record(any(), any());
 
+        // §10: the poison outcome is the one ems_events_consumed_total value the pipeline cannot report,
+        // because process() threw before returning one — the recoverer owns it.
+        assertThat(poisonCount(POISON_TOPIC)).isEqualTo(1.0);
+
         // partition committed past the poison ⇒ a subsequent good record is processed (not stalled)
         String good = "{\"id\":\"evt-after-poison\"}";
         producer.send(POISON_TOPIC, good);
@@ -138,13 +150,23 @@ class DlqRoutingTest {
         // unbounded park backoff ⇒ the same record is redelivered (offset never committed)
         verify(ingestionService, timeout(5_000).atLeast(2)).process(eq(payload));
 
-        // nothing dead-lettered: no triage row, no DLQ message
+        // nothing dead-lettered: no triage row, no DLQ message, and — the point of A1 — no poison count
         verify(dlqRecorder, after(500).never()).record(any(), any());
+        assertThat(poisonCount(TRANSIENT_TOPIC)).isZero();
         try (Consumer<String, String> dlq = dlqVerifier()) {
             broker.consumeFromAnEmbeddedTopic(dlq, TRANSIENT_DLQ);
             ConsumerRecords<String, String> none = KafkaTestUtils.getRecords(dlq, Duration.ofMillis(500));
             assertThat(none.count()).isZero();
         }
+    }
+
+    /** {@code ems_events_consumed_total{topic,outcome="poison"}} for one topic, 0 when the series is absent. */
+    private double poisonCount(String topic) {
+        var counter = meters.find(IngestOutcome.METRIC)
+                .tag(IngestOutcome.TAG_TOPIC, topic)
+                .tag(IngestOutcome.TAG_OUTCOME, IngestOutcome.POISON)
+                .counter();
+        return counter == null ? 0.0 : counter.count();
     }
 
     /** A throwaway earliest-reading consumer for asserting DLQ contents. */
@@ -170,8 +192,13 @@ class DlqRoutingTest {
         }
 
         @Bean
-        EventConsumer eventConsumer(IngestionService ingestionService) {
-            return new EventConsumer(ingestionService);
+        MeterRegistry meterRegistry() {
+            return new SimpleMeterRegistry();
+        }
+
+        @Bean
+        EventConsumer eventConsumer(IngestionService ingestionService, MeterRegistry meterRegistry) {
+            return new EventConsumer(ingestionService, meterRegistry);
         }
     }
 }

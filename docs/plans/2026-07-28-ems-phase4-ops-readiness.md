@@ -66,11 +66,11 @@ Every one of these was read before this plan was written; the four contradiction
 5. **`ems_dlq_depth{topic}` source.** **Count unreplayed `dlq_record` rows grouped by `topic` (`replayed_at IS NULL`)** — that is the actionable triage depth and needs no AdminClient. *Alt: DLT end-offsets — rejected: nothing consumes the DLT, so its end-offset is a cumulative total that never returns to zero after a replay, which would make "page > 0 for 5 m" fire forever.* Noted caveat: `dlq_record` writes are best-effort (`KafkaConfig.java:118`), so this can undercount relative to the DLT; recorded in the spec.
 6. **Consumer lag + retention headroom.** **`ReconciliationSweep` opens one `AdminClient` and publishes `ems_consumer_lag{topic,partition}` = `endOffset − committedOffset`, plus `ems_consumer_retention_headroom_records{topic,partition}` = `committedOffset − earliestOffset` as the "lag age approaching retention" proxy.** §10 asks for "lag age"; a true age needs `offsetsForTimes` round-trips per partition per tick, which is expensive and fragile. Records-of-headroom is the cheap, monotone proxy that trips *before* the committed offset falls off the log. Recorded as a spec note (a proxy for an underspecified metric, not a contradiction — no amendment).
 7. **`ems_overdue_inflight_runs` definition.** **Reuse `RunStatusRepository`'s vocabulary verbatim** (grounding checkpoint 4): group `event` by `context_id` over a bounded horizon, count groups whose `max(created_at)` is older than `ems.recon.overdue-window` and that contain **no** terminal event. Bounded by `ems.recon.horizon` so the query rides `idx_event_created_at` instead of scanning history.
-8. **`ems_registry_version_info{component}`.** **Standard info-metric pattern: a gauge of constant value `1`, one series per distinct `registry_version` currently loaded, tagged `component="ems-subscriptions", version="<registry_version>"`.** The divergence alert then counts distinct series. Phase B adds more components without a code change here.
+8. **`ems_registry_version{component,version}`** (the `_info` spelling is unscrapeable — see A11 / `MetricNamingTest`). **Standard info-metric pattern: a gauge of constant value `1`, one series per distinct `registry_version` currently loaded, tagged `component="ems-subscriptions", version="<registry_version>"`.** The divergence alert then counts distinct series. Phase B adds more components without a code change here.
 9. **Per-endpoint latency histograms.** **No controller changes: a `MeterFilter` that enables percentile histograms on `http.server.requests` restricted to `uri ∈ {/event, /run/status, /gate/groups}`.** Boot already times every request; §10 only asks for the histogram buckets on three of them. *Alt: `@Timed` on each controller — rejected, three annotations plus a second metric name to alert on.*
 10. **Perf `/run/status` measurement point.** **Measure `RunStatusRepository.summarize` directly** — the §12 target is a database-plan gate and that is where the 50 ms lives. HTTP/serialization overhead is measured once and reported separately, not folded into the gate. *Alt: full `@SpringBootTest` + `TestRestTemplate` — rejected, it makes the number a JVM-warmup artifact.*
 11. **Where the seed migration lives.** **A separate Flyway location `classpath:db/seed` holding `V6__subscription_seed0.sql`, added to `spring.flyway.locations` in the `azure`/`shadow`/`live` profiles only.** *Rationale:* it stays a versioned, re-runnable, reviewable Flyway migration in production, while the 84 `*IT`s — which we **cannot execute on this box** — keep the empty `subscription` table they were written against. Putting 16 rows into `db/migration` would silently change the fixture state of every IT, and we would not find out until CI, which is inert. *Alt: single location + truncate in the IT base — rejected as a blind change to 84 untestable tests.*
-12. **Seed CEL case handling (A13).** **Make case-insensitivity explicit in the rule text: `.lowerAscii()` on both sides for every field the `Normalizer` does not canonicalize, and a `has()`-guarded either-spelling expression for the `batchtype|batchType` key split.** This reproduces `JsonFilterRuleset`'s whole-JSON lower-casing without touching the `Normalizer` (whose mutation counter must stay ≈ 0 before cutover — §4.4). **Step 1 of Batch H verifies `lowerAscii()` actually compiles under the pinned cel-java 0.4.4 before any rule depends on it.**
+12. ~~**Seed CEL case handling (A13).** Make case-insensitivity explicit in the rule text: `.lowerAscii()` on both sides … and a `has()`-guarded either-spelling expression for the `batchtype|batchType` key split.~~ **SUPERSEDED at the Batch-0 checkpoint by A15 (§0):** rule text is owned by **DAG authors**, so the fold moves out of the rules and into the **activation view** — `MatchView` lower-cases every key and every string value before CEL sees the tree. Rules become all-lowercase paths + all-lowercase literals + plain `==`. Still no `Normalizer` change, so the §4.4 mutation counter keeps its meaning; and because legacy lower-cased both the JSON *and* the JSONPath, the legacy literals now transfer **verbatim**.
 13. **Seed `enabled` flags.** **Mirror legacy exactly — all rows enabled except the NSFR row.** Safe because the real cutover gate is `ems.dispatch.enabled=false`, not the subscription rows; and shadow-stage parity evidence (Phase 5) requires the rows to be live.
 14. **Alert thresholds §10 does not specify** (sustained-lag records, headroom floor, drop-rate anomaly shape). **Templated in `values.yaml` with conservative defaults and flagged in the assumptions register** — §14 item 10 (topic volumes) is unanswered, so any hard-coded number would be invented. 
 
@@ -147,7 +147,7 @@ Nothing in Batches A–H may be built before these are recorded and reviewed —
 
 **Note:** count **outside** the transaction callback but only on the non-duplicate path, so a redelivery does not double-count (mirrors the `inserted == 0` early return at `IngestionService.java:135-139`). Assert exactly that in the test.
 
-### Task B.3: `ems_registry_version_info{component,version}`
+### Task B.3: `ems_registry_version{component,version}`
 **Files:**
 - Create `ems/src/main/java/com/orchestration/ems/subscription/RegistryVersionMetrics.java` — a component that, on a `@Scheduled` tick (`ems.recon.interval-ms`, shared with recon), reads the distinct `registry_version` values of enabled rows and maintains one constant-`1` gauge per version tagged `component="ems-subscriptions"`. Removes series for versions that disappear.
 - Add `SubscriptionRepo.distinctEnabledRegistryVersions()`.
@@ -216,7 +216,7 @@ Nothing in Batches A–H may be built before these are recorded and reviewed —
   - **page** `EmsRetentionHeadroomLow` — `min(ems_consumer_retention_headroom_records) < {{ .Values.alerts.headroomRecords }}`, `for: 5m` (the "lag age approaching retention" early page).
   - **warn** `EmsDropRateAnomaly` — per-source ratio of `rate(ems_events_dropped_total[15m])` against `[15m] offset 1d`, `for: 30m`.
   - **warn** `EmsNormalizationMutations` — `increase(ems_normalization_mutations_total[1h]) > 0`, `for: 5m` (§4.4: any nonzero reviewed before cutover).
-  - **warn** `EmsRegistryDivergence` — `count(count by (version) (ems_registry_version_info)) > 1`, `for: 30m`.
+  - **warn** `EmsRegistryDivergence` — `count(count by (version) (ems_registry_version)) > 1`, `for: 30m`.
   - **warn** `EmsOverdueInflightRuns` — `ems_overdue_inflight_runs > 0`, `for: 30m`.
   - **warn** `EmsEndpointP95Regression` — `histogram_quantile(0.95, sum by (le,uri) (rate(http_server_requests_seconds_bucket{uri=~"/event|/run/status|/gate/groups"}[10m]))) > {{ .Values.alerts.endpointP95Seconds }}`, `for: 15m`.
   - Every rule carries `annotations.runbook` pointing at the matching `docs/ems-user-guide.md` §8 runbook.
@@ -296,14 +296,18 @@ Nothing in Batches A–H may be built before these are recorded and reviewed —
 
 ## Batch H — Production `seed-0` subscription migration (§11 stage 0 item 3)
 
-Governed by A12/A13/A14. **Do not invent rows.** Every departure from the literal legacy text becomes a numbered line in the sign-off register.
+Governed by A12/A13/A14/**A15**. **Do not invent rows.** Under A15 the rule dialect is: all-lowercase paths, all-lowercase literals, plain `==`/`&&`/`startsWith`, nothing else. Every departure from the literal legacy text becomes a numbered line in the sign-off register.
 
-### Task H.1: Verify `lowerAscii()` compiles under the pinned cel-java
-**Files:** Create/extend `ems/src/test/java/com/orchestration/ems/subscription/CelDialectTest.java`.
+### Task H.1: `MatchView` — the case-folded activation view (A15)
+**Files:**
+- Create `ems/src/main/java/com/orchestration/ems/subscription/MatchView.java` — `static JsonNode fold(JsonNode)`: deep-copy, recursively lower-case every object **key** and every **string value**; numbers/booleans/nulls untouched; arrays recursed element-wise. On a key collision after folding (A8's `TYPE` vs `type`), **last-wins in document order** (legacy parity) and log WARN once with both keys.
+- Modify `SubscriptionService#eventMap`/`#contextMap` — apply `MatchView.fold(...)` **after** `normalizer.normalize*`.
+- Create `ems/src/test/java/com/orchestration/ems/subscription/MatchViewTest.java` — keys folded, string values folded, non-strings untouched, nested objects + arrays, collision last-wins, input not mutated.
+- Modify `ems/src/test/java/com/orchestration/ems/subscription/SubscriptionServiceTest.java` and any rule text in test fixtures to the lower-case dialect.
 
-**Step 1 (red):** compile and execute `event.additionalData.tenant.lowerAscii() == "frca"` and a `has()`-guarded either-spelling expression through the existing `CelPrograms`, against a sample payload.
-**Step 2:** Run. **If `lowerAscii()` is not available in cel-tools 0.4.4, stop and report** — the fallback is `matches("(?i)^frca$")`, which changes micro-decision 12 and needs sign-off before the rules are written.
-**Step 3:** `mvn verify` → green.
+**Step 1 (red):** write `MatchViewTest`, then `MatchView`.
+**Step 2:** wire it into `SubscriptionService`; fix the existing rule text in tests/fixtures (mechanical: lower-case the path and the literal).
+**Step 3:** `mvn verify` → green. *Report the count of test rule-strings rewritten.*
 
 ### Task H.2: The assumptions register (the sign-off artifact)
 **Files:** Create `docs/ems-seed0-assumptions.md`.
@@ -313,7 +317,7 @@ Governed by A12/A13/A14. **Do not invent rows.** Every departure from the litera
   - `context.date.run-category` → `context.data["run-category"]` (1 row).
   - the FRCA_CURATION condition de-duplication (A14 — the grammar has no readable parser).
   - `PLATFORM` as the invented `tenant_id` for all 7 PERSIST rows (legacy persist rows have no owner).
-  - every `lowerAscii()` fold and every `has()`-guarded key-spelling choice (A13), listed per field.
+  - **(A15 removes this class of assumption)** — the case fold is now uniform and mechanical, so instead record the *one* residual: which key survives a fold collision where both spellings are present in a sample payload, per field.
   - `enabled` flags mirroring legacy (micro-decision 13).
   - **the unanswered §14 item 3 per-environment deltas** — stated as out of scope for the migration, arriving via `PUT /admin/subscriptions`.
   - the A12 consequence: no `eventorchestration.filter.post` property row exists in the evidence, so `PERSIST ⊇ FORWARD` is load-bearing.
@@ -379,6 +383,6 @@ Governed by A12/A13/A14. **Do not invent rows.** Every departure from the litera
 - No retention/archival DAG (Phase 6).
 - No `routing_decision` partitioning (§14 item 10 unanswered — the design already defers it).
 - No `contractVersion` in the conf (A5 — Phase B).
-- No change to `Normalizer`'s field list. Extending it to fold `tenant`/`updateType`/`msgTypeEventType` would make the seed CEL simpler, but it would also make `ems_normalization_mutations_total` fire on ordinary traffic — and §4.4 requires that counter to be reviewed-and-≈-zero *before* cutover. A13's explicit `lowerAscii()` keeps the counter meaningful.
+- No change to `Normalizer`'s field list. Extending it to fold `tenant`/`updateType`/`msgTypeEventType` would make the seed CEL simpler, but it would also make `ems_normalization_mutations_total` fire on ordinary traffic — and §4.4 requires that counter to be reviewed-and-≈-zero *before* cutover. A15's `MatchView` keeps the counter meaningful *and* keeps the rules simple — it folds the CEL activation view only, never the stored payload, the generated columns, or the outgoing `conf`.
 - No local Docker remediation, no `git init`, no commits.
 - No hard-coded alert thresholds presented as derived — the four tunables are values-file inputs flagged as assumptions until §14 item 10 lands.
