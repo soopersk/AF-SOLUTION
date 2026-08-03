@@ -140,15 +140,21 @@ public class SubscriptionService {
         return new Ruleset(List.copyOf(persist), List.copyOf(forward));
     }
 
+    /**
+     * Normalize, then case-fold (A15). Order matters: the {@link Normalizer} is the canonicalization
+     * authority and its mutation counter must keep counting real rewrites, so the fold happens
+     * <em>after</em> it and only on this in-memory activation — never on anything that is stored,
+     * indexed, or sent onward.
+     */
     private Map<String, Object> eventMap(JsonNode rawEvent) {
-        return toMap(normalizer.normalizeEvent(rawEvent));
+        return toMap(MatchView.fold(normalizer.normalizeEvent(rawEvent)));
     }
 
     private Map<String, Object> contextMap(JsonNode rawContext) {
         if (rawContext == null) {
             return EMPTY_CONTEXT;
         }
-        return toMap(normalizer.normalizeContext(rawContext));
+        return toMap(MatchView.fold(normalizer.normalizeContext(rawContext)));
     }
 
     @SuppressWarnings("unchecked")

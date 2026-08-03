@@ -1,0 +1,22 @@
+{{- /*
+minAvailable rather than maxUnavailable, and 2 rather than 1: the HPA floor is 3, ingest capacity is
+what a drain actually costs, and `maxUnavailable: 0` on the rollout only constrains the rollout — it
+says nothing about a node drain or a cluster upgrade evicting two pods at once.
+
+Note this bounds VOLUNTARY disruption only. It is not a correctness guard: concurrent outbox drains are
+already safe (FOR UPDATE SKIP LOCKED, §10) and a killed pod's uncommitted Kafka offsets are simply
+redelivered. It is an availability guard.
+*/ -}}
+{{- if .Values.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "ems.fullname" . }}
+  labels:
+    {{- include "ems.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.pdb.minAvailable | default 2 }}
+  selector:
+    matchLabels:
+      {{- include "ems.selectorLabels" . | nindent 6 }}
+{{- end }}

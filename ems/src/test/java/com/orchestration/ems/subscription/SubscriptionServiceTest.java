@@ -97,7 +97,7 @@ class SubscriptionServiceTest {
     void persistRuleReferencingContext_isRejected_A4() {
         SubscriptionRow persistTouchesContext = new SubscriptionRow(
                 0L, "PLATFORM", Stage.PERSIST, "bad_persist_uses_context", null,
-                "event.source == \"MERIVAL\" && context.data.frequency == \"DAILY\"", "seed-0", true);
+                "event.source == \"merival\" && context.data.frequency == \"daily\"", "seed-0", true);
 
         assertThatThrownBy(() -> new CelPrograms().compile(persistTouchesContext))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -108,7 +108,7 @@ class SubscriptionServiceTest {
     void forwardRuleMayReferenceContext_compilesFine() {
         SubscriptionRow forwardUsesContext = new SubscriptionRow(
                 0L, "CAPITAL", Stage.FORWARD, "fwd_uses_context", CAPITAL_DAG,
-                "event.source == \"MERIVAL\" && context.data.frequency == \"DAILY\"", "seed-0", true);
+                "event.source == \"merival\" && context.data.frequency == \"daily\"", "seed-0", true);
 
         assertThat(new CelPrograms().compile(forwardUsesContext)).isNotNull();
     }

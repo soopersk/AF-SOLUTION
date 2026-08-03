@@ -4,7 +4,7 @@
 **Companion document:** [`ems-technical-specification.md`](ems-technical-specification.md) — the full technical specification (schema, algorithms, invariants).
 **Design source of truth:** [`ems-design.md`](../ems-design.md).
 
-> ⚠️ **Pre-production build.** EMS is at implementation phase 3 of 6. **Authentication is not yet implemented — every endpoint is currently open.** `POST /admin/replay` and `PUT /admin/subscriptions` do not exist yet, and the subscription table has no seeded rows. See [§10 Current limitations](#10-current-limitations) before relying on anything here in production.
+> ⚠️ **Pre-production build.** EMS is at implementation phase 4 of 6. Authentication, the admin endpoints and the `seed-0` subscription rows all exist now. What does **not** exist: any observed-green integration run, any executed performance measurement, and the shadow/cutover stages. The `seed-0` rules are also loaded but not yet signed off. See [§10 Current limitations](#10-current-limitations) before relying on anything here in production.
 
 ---
 
@@ -436,27 +436,36 @@ flowchart TB
 
 ### 7.3 Writing rules in CEL
 
-Rules are CEL boolean expressions evaluated against a **normalized** view of the payload.
+Rules are CEL boolean expressions. **There is exactly one spelling for everything: lowercase.**
 
 ```javascript
 // PERSIST — event fields only
-event.source == "MERIVAL" && event.additionalData.TYPE == "INGESTION"
-    && event.additionalData.RUN_TYPE == "BATCH"
+event.source == "merival" && event.additionaldata.type == "ingestion"
+    && event.additionaldata.run_type == "batch"
 
 // FORWARD — may also reference context
-event.additionalData.tenant == "FRCA"
-    && event.additionalData.updateType == "CURATION"
-    && context.data["run-category"].startsWith("TOPSIDE")
+event.additionaldata.tenant == "frca"
+    && event.additionaldata.updatetype == "curation"
+    && context.data.runcategory.startsWith("topside")
 ```
+
+**Why everything is lowercase.** Before your rule runs, EMS builds a *matching view* of the event and context: every key and every string value is lower-cased, and every hyphenated key also gets a hyphen-free name. So `additionalData`, `AdditionalData` and `ADDITIONALDATA` are one key; `FINISH`, `Finish` and `finish` are one value; `run-category` and `runCategory` are one name, `runcategory`. You write the lowercase form and it matches regardless of how the producer spelled it.
+
+This exists so that you never have to write `.lowerAscii()`, never have to guard with `has()`, and never have to write the same condition twice for two spellings. If a rule needs any of those, something is wrong — ask rather than working around it.
 
 | Do | Don't |
 |---|---|
+| Write **all keys and all string literals in lowercase** | ❌ `event.additionalData.TYPE == "INGESTION"` — the view has no upper-case keys or values, so this silently never matches |
+| Write `context.data.runcategory` — hyphens are removed for you | ❌ `context.data["run-category"]` — it still works, but it is the old dialect and reads as if the two spellings differ |
 | Use `context.*` in `FORWARD` rules | ❌ Use `context.*` in a `PERSIST` rule — **it will not compile** (the variable is not in scope) |
-| Use `["hyphen-key"]` bracket syntax for hyphenated keys | ❌ Write `context.data.reporting-date` (parsed as subtraction) |
-| Compare against **upper-case** values for `STATE`, `TYPE`, `taskEventType`, `frequency` — they are normalized before evaluation | ❌ Assume a missing field raises an error — it makes the rule a **non-match** |
+| Use `startsWith("prefix")` for what was a trailing `.*` | ❌ Expect regex — it was never regex, only a literal prefix |
 | Keep rules **coarse** | ❌ Encode calculator logic here — that belongs in the Airflow registry |
 
-Translating a legacy filter: an array of objects is an **OR**; keys within one object are an **AND**; a trailing `.*` was a literal-prefix match, so use `startsWith(...)`.
+A missing field makes the rule a **non-match**, not an error. That is deliberate, and it is also the most common reason a new rule appears to do nothing — see §7.5.
+
+> **The fold applies to matching only.** What gets stored, what `/run/status` and `/gate/groups` return, and what EMS sends to Airflow in the `conf` are all untouched — those still carry the payload's original casing. So a rule compares `== "finish"` while the same field reads `FINISH` everywhere else. One vocabulary per surface: lowercase in rules, as-published everywhere else.
+
+Translating a legacy filter: an array of objects is an **OR**; keys within one object are an **AND**; the legacy value literals transfer **verbatim**, because they were already lowercase.
 
 ### 7.4 Adding a subscription
 
@@ -473,7 +482,7 @@ curl -s -X PUT http://ems/admin/subscriptions \
         "stage": "FORWARD",
         "rule_name": "cap_data_update.MER_batch",
         "control_dag_id": "orchestration_control_dag_capital",
-        "when": "event.source == \"MERIVAL\" && event.additionalData.TYPE == \"INGESTION\"",
+        "when": "event.source == \"merival\" && event.additionaldata.type == \"ingestion\"",
         "registry_version": "reg-2026-07-20"
       }
     ]
@@ -508,7 +517,8 @@ The rejection reason is logged by EMS, not returned — check the service log if
 
 1. Wait ~60 s for the cache refresh.
 2. Watch `ems_events_dropped_total{source}` — a broadened `PERSIST` rule should reduce it.
-3. Query the audit trail:
+3. **If nothing matches, check case first.** A rule that compiles but never fires is almost always an upper-case key or literal left over from the old dialect (`event.additionalData.TYPE == "INGESTION"` instead of `event.additionaldata.type == "ingestion"`). It is not an error and it produces no log line — it just never matches. See §7.3.
+4. Query the audit trail:
 
 ```sql
 SELECT decision, tenant_id, target_dag_id, registry_version, decided_at
@@ -518,7 +528,7 @@ WHERE event_id = '<an event you expect to match>' AND tier = 'L0_SUBSCRIPTION';
 
 `FORWARDED` with your tenant means the rule fired. `NOT_SUBSCRIBED` means the event was stored but matched no forward rule. **No rows at all** means the event never passed the persist gate.
 
-4. Confirm delivery:
+5. Confirm delivery:
 
 ```sql
 SELECT dag_id, delivered_at, attempts, last_error
@@ -595,6 +605,20 @@ Replay is safe: every downstream step is idempotent, so a partially processed re
 
 > **A poison message does not stall its partition.** It is dead-lettered and the offset commits, so processing continues.
 
+**Clearing the alert.** `ems_dlq_depth` counts rows with `replayed_at IS NULL`, per topic, refreshed every `ems.recon.interval-ms` (60 s). Stamping the last row of a topic makes that topic's series **disappear** rather than sit at zero — so within about a minute of finishing a replay the alert resolves on its own. Nothing to acknowledge, nothing to silence.
+
+Two things follow from that, and both matter:
+
+- **Never delete `dlq_record` rows to clear the alert.** It works, and it destroys the only record that a poison event ever happened. `PAYLOAD_UNAVAILABLE` rows in particular are kept deliberately — the bytes are gone but the fact is not.
+- **A discard is a stamp, not a delete — and there is no endpoint for it.** `POST /admin/replay` is the only thing that sets `replayed_at`. If the decision is "we are not replaying this", the row must be stamped by hand, and the reason recorded outside the table:
+
+  ```sql
+  UPDATE dlq_record SET replayed_at = now(), replayed_by = 'discard: <your id>, <ticket>'
+  WHERE id = 413 AND replayed_at IS NULL;
+  ```
+
+  Reusing `replayed_by` to carry a discard note is a workaround, not a design — the table has no discard column and no reason column. Until it does, the alert cannot distinguish "replayed" from "written off", so the ticket reference in that string is the only thing that will tell you later.
+
 ### 8.2 Outbox backlog — Airflow is down
 
 **Alert:** `ems_outbox_pending_age_seconds > 600` (oldest undelivered row older than 10 minutes).
@@ -622,9 +646,22 @@ GROUP BY 1,2,3 ORDER BY 4 DESC;
 
 ### 8.3 Consumer lag — a partition is parked
 
-**Alert:** sustained `ems_consumer_lag`, or lag age approaching topic retention.
+**Alerts:** `EmsConsumerLagSustained` (`ems_consumer_lag` > 100 000 for 15 m), `EmsRetentionHeadroomLow` (`ems_consumer_retention_headroom_records` < 500 000 for 5 m), `EmsLagProbeSilent` (the probe went quiet for 15 m).
 
 **What it means:** a dependency (PostgreSQL or the EDF Context API) is down, so partitions have parked with unbounded backoff. **Nothing is lost and nothing is dead-lettered** — but the clock is running.
+
+**Read the two gauges as a pair.** Both come from one `AdminClient` poll of the ingest group's **committed** offsets, so they are broker-side facts — published even by a pod that consumes nothing, and even while a partition is parked.
+
+| Gauge | Measures | What it tells you |
+|---|---|---|
+| `ems_consumer_lag` | log end − committed offset | **How far behind you are.** Rises during any outage |
+| `ems_consumer_retention_headroom_records` | committed offset − log start | **How much room is left before Kafka deletes unread data.** Falls toward zero as retention catches up with you |
+
+Lag rising is recoverable. **Headroom falling is not** — once records age out of the topic they are gone, and no consumer configuration prevents it. That is why headroom pages at 5 minutes while lag waits 15.
+
+> Headroom is a *proxy* for "lag age approaching retention": the broker exposes no cheap per-partition age, but headroom collapses toward zero for the same reason age approaches retention. It is measured in **records**, so a topic whose write rate changes sharply will need `alerts.headroomRecords` retuned.
+
+**If `EmsLagProbeSilent` fires, treat it as seriously as lag itself.** The probe clears its series on failure rather than freezing them — a lag number stuck at its last value would look healthy precisely when it stopped being true. Silence means you are flying blind on the two gauges above, not that lag is zero. Check broker reachability and `ems.recon.kafka.timeout-ms`.
 
 ```mermaid
 flowchart TB
@@ -691,26 +728,110 @@ The Scala consumers resume from **their own frozen offsets** and reprocess the g
 
 **Constraint:** safe only while the gap is within Kafka retention. Keep the old stack deployable for the full 2-week observation window.
 
+### 8.7 Overdue in-flight runs
+
+**Alert (warn):** `EmsOverdueInflightRuns` — `ems_overdue_inflight_runs > 0` for 30 min.
+
+**What it means:** one or more runs reached a `STARTED` event and never reached a terminal one, and the last event on that run is older than `ems.recon.overdue-window` (default 6 h). This is the **loss backstop**: it is computed by the `ReconciliationSweep` straight from committed database state, so it still fires when the thing that broke *is* the heartbeat.
+
+**It is not, by itself, an EMS fault.** The three causes, in the order they are worth checking:
+
+| Check | Meaning |
+|---|---|
+| Is the DAG still running in Airflow? | A genuinely long run. Widen `ems.recon.overdue-window` rather than silencing the alert |
+| Did the DAG finish but post no terminal event? | The *producer* dropped the completion. EMS is reporting truthfully; fix the DAG |
+| Was the terminal event dropped at the persist gate? | Check `ems_events_dropped_total` and [§8.4](#84-drop-rate-anomaly--a-misconfigured-subscription) — a `PERSIST` rule too narrow to match terminal events looks exactly like this |
+
+Identify the runs with the same query the gauge uses — filter `event` for a `STARTED` state with no terminal sibling inside `ems.recon.horizon` (default 7 d). The `horizon` exists so the query rides `idx_event_created_at`; runs older than it have left the window and are no longer counted.
+
+### 8.8 Normalization mutations on live traffic
+
+**Alert (warn):** `EmsNormalizationMutations` — `increase(ems_normalization_mutations_total[1h]) > 0` for 5 min.
+
+**What it means:** the `Normalizer` rewrote a field on a real payload. Per §4.4 this counter must be **reviewed and approximately zero before cutover**, because a mutation is EMS changing a value the existing control DAG expects unchanged.
+
+This alert is intentionally noisy at a threshold of *any* nonzero. It is a pre-cutover review gate, not a steady-state health signal. The `field` label names what was rewritten; compare the stored payload against the source message and decide whether the mapping is correct or whether the upstream shape changed.
+
+**Do not** widen the `Normalizer` to make this quiet. The case-folding needed by subscription rules happens in the `MatchView` activation view instead (amendment A15), specifically so this counter keeps its meaning.
+
+### 8.9 Registry version divergence
+
+**Alert (warn):** `EmsRegistryDivergence` — more than one `version` series for a single `component` for 30 min.
+
+**What it means:** two subscription registry versions are enabled at once. The consequence is auditability, not availability: `routing_decision.registry_version` stops identifying a single ruleset, so "which rules routed this event?" becomes unanswerable after the fact.
+
+**Cause:** a registry render landed partially — some rows updated, some not — usually a `PUT /admin/subscriptions` that failed midway or two overlapping publishes.
+
+**Action:** `SELECT DISTINCT registry_version FROM subscription WHERE enabled` to see the split, then re-publish the intended registry version in full. The gauge is a `MultiGauge`, so the retired version's series disappears on the next sweep rather than freezing at 1.
+
+### 8.10 Endpoint p95 regression
+
+**Alert (warn):** `EmsEndpointP95Regression` — fleet p95 on `/event`, `/run/status` or `/gate/groups` above `alerts.endpointP95Seconds` (default 0.05 s) for 15 min.
+
+**What it means:** the §12 latency budget is breached on one of the three endpoints that carry one. Only these three publish histogram buckets (see `MetricsConfig`) — every other route keeps a plain count/sum timer and cannot be quantiled at all.
+
+| Check | Meaning |
+|---|---|
+| `EXPLAIN (FORMAT JSON)` the query behind the endpoint | A `Seq Scan` on `event` or `context` means the generated-column index is not being used — the single most common cause |
+| Table growth since the last known-good measurement | The plan may have flipped as row counts crossed a threshold; `ANALYZE` first |
+| Hikari pool saturation | The pool is capped at 10 per pod by design; contention shows as latency, not errors |
+
+**Caveat, stated plainly:** the 0.05 s threshold is a *design target*, not a measured baseline. The §12 perf harness has never been executed against a realistic dataset, so treat the first firing of this alert as information about the threshold as much as about the service.
+
 ---
 
 ## 9. Monitoring and alerts
 
-| Metric | Severity | Threshold | Runbook |
+Alerts ship **with the service**, as a `PrometheusRule` in the Helm chart — you do not write them yourself. Eleven rules in two groups; every one carries a `runbook` annotation pointing back into §8 of this guide.
+
+### 9.1 Page — someone gets woken up
+
+| Alert | Fires when | For | Runbook |
 |---|---|---|---|
-| `ems_dlq_depth{topic}` | 🔴 **page** | > 0 for 5 min | [§8.1](#81-dlq-alert--triage-and-replay) |
-| `ems_outbox_pending_age_seconds` | 🔴 **page** | oldest > 10 min | [§8.2](#82-outbox-backlog--airflow-is-down) |
-| `ems_consumer_lag{topic,partition}` | 🔴 **page** | sustained lag; **early page** when lag age nears retention | [§8.3](#83-consumer-lag--a-partition-is-parked) |
-| `ems_events_dropped_total{source}` | 🟡 warn | per-source anomaly | [§8.4](#84-drop-rate-anomaly--a-misconfigured-subscription) |
-| `ems_normalization_mutations_total{field}` | 🟡 warn | any nonzero | Review before cutover — a nonzero value means EMS is changing live values the existing control DAG expects unchanged |
-| `ems_subscription_verdicts_total{tenant,decision}` | 🟡 warn | tenant volume drop | Check that tenant's rules |
-| `ems_overdue_inflight_runs` | 🟡 warn | STARTED with no terminal past a global window | Loss backstop |
-| `ems_registry_version{component,version}` | 🟡 warn | divergence > 30 min | Phase B+ |
-| Endpoint p95 (`/event`, `/run/status`, `/gate/groups`) | 🟡 warn | regression | Check index usage with `EXPLAIN` |
-| `ems_context_fetch_total{source}` | ℹ️ info | — | `edf` share rising ⇒ cache churn |
+| `EmsDlqDepthNonZero` | `ems_dlq_depth > 0` on any topic | 5 m | [§8.1](#81-dlq-alert--triage-and-replay) |
+| `EmsOutboxBacklogStale` | `ems_outbox_pending_age_seconds > 600` | 5 m | [§8.2](#82-outbox-backlog--airflow-is-down) |
+| `EmsConsumerLagSustained` | `ems_consumer_lag >` `alerts.lagRecords` (100 000) | 15 m | [§8.3](#83-consumer-lag--a-partition-is-parked) |
+| `EmsRetentionHeadroomLow` | `ems_consumer_retention_headroom_records <` `alerts.headroomRecords` (500 000) | 5 m | [§8.3](#83-consumer-lag--a-partition-is-parked) |
 
-**Endpoints:** `/actuator/health/liveness`, `/actuator/health/readiness`, `/actuator/prometheus`, `/actuator/metrics`.
+`EmsOutboxBacklogStale` **is not rendered unless `dispatch.enabled=true`.** In shadow mode nothing drains the outbox by design, so the age climbs forever and the page would be pure noise. If you are in shadow mode and expected this alert, that is why it is missing.
 
-> ⏳ `ems_dlq_depth`, `ems_consumer_lag`, `ems_overdue_inflight_runs` and `ems_registry_version` require the `ReconciliationSweep`, which is **not yet implemented**. Four of the alerts above cannot fire today.
+`EmsRetentionHeadroomLow` is the one that matters most and the one people misread. It counts records between the log start and your committed offset — **slack before Kafka deletes data you have not read yet.** It is a proxy for "lag age approaching retention", because the broker exposes no cheap per-partition age. When it fires, the clock is running on the only loss scenario no configuration prevents.
+
+### 9.2 Warn — look at it during the working day
+
+| Alert | Fires when | For | Runbook |
+|---|---|---|---|
+| `EmsLagProbeSilent` | `absent(ems_consumer_lag)` — the probe stopped reporting | 15 m | [§8.3](#83-consumer-lag--a-partition-is-parked) |
+| `EmsDropRateAnomaly` | per-source drop rate > 3× the same window yesterday | 30 m | [§8.4](#84-drop-rate-anomaly--a-misconfigured-subscription) |
+| `EmsSubscriptionVerdictsDrop` | per-tenant verdict rate < 0.5× yesterday | 30 m | [§8.4](#84-drop-rate-anomaly--a-misconfigured-subscription) |
+| `EmsNormalizationMutations` | `increase(ems_normalization_mutations_total[1h]) > 0` | 5 m | [§8.8](#88-normalization-mutations-on-live-traffic) |
+| `EmsRegistryDivergence` | more than one `version` per `component` | 30 m | [§8.9](#89-registry-version-divergence) |
+| `EmsOverdueInflightRuns` | `ems_overdue_inflight_runs > 0` | 30 m | [§8.7](#87-overdue-in-flight-runs) |
+| `EmsEndpointP95Regression` | p95 of `/event`, `/run/status`, `/gate/groups` > 0.05 s | 15 m | [§8.10](#810-endpoint-p95-regression) |
+
+**`EmsLagProbeSilent` exists because a missing metric is worse than a bad one.** If the lag probe fails, it *clears* its series rather than freezing them — a lag number that stopped rising exactly when lag started to matter would defeat every threshold above it. `absent()` catches that. Turn it off with `alerts.expectConsumerLag: false` on an API-only deployment that never consumes.
+
+Two metrics have **no** alert and are for reading, not paging: `ems_context_fetch_total{source}` (a rising `edf` share means cache churn) and `ems_events_consumed_total{topic,outcome}`.
+
+### 9.3 Tuning the thresholds
+
+Every number above is a `values.yaml` knob, not a literal in the rule:
+
+| Knob | Default | Controls |
+|---|---|---|
+| `alerts.lagRecords` | `100000` | `EmsConsumerLagSustained` |
+| `alerts.headroomRecords` | `500000` | `EmsRetentionHeadroomLow` |
+| `alerts.dropRatioFactor` | `3` | `EmsDropRateAnomaly` |
+| `alerts.volumeDropFactor` | `0.5` | `EmsSubscriptionVerdictsDrop` |
+| `alerts.endpointP95Seconds` | `0.05` | `EmsEndpointP95Regression` |
+| `alerts.expectConsumerLag` | `true` | Renders `EmsLagProbeSilent` at all |
+| `metrics.prometheusRule.enabled` | `true` | Renders the whole rule file |
+| `metrics.serviceMonitor.enabled` | `true` | Whether Prometheus scrapes EMS |
+| `metrics.dashboard.enabled` | `true` | The Grafana dashboard ConfigMap |
+
+**Endpoints:** `/actuator/health/liveness`, `/actuator/health/readiness`, `/actuator/prometheus`, `/actuator/metrics`. Metrics are **pulled** by a `ServiceMonitor`, not pushed.
+
+> ⚠️ **These thresholds have never been calibrated against real traffic.** They are design targets. Expect to retune `lagRecords`, `headroomRecords` and `endpointP95Seconds` after the first week of shadow running, and treat an early firing as information about the threshold at least as much as about the service.
 
 ---
 
@@ -720,13 +841,13 @@ Read this before depending on EMS.
 
 | Limitation | Impact on you |
 |---|---|
-| 🔴 **No `seed-0` subscription rows** in any migration | A fresh deployment has an **empty subscription table**, so **every event is dropped at the persist gate**. Rules must be loaded before ingestion is meaningful |
+| 🔴 **`seed-0` rules are loaded but not signed off** | The 16 rules in `V6__subscription_seed0.sql` load automatically in the `shadow`, `live` and `azure` profiles. The FORWARD half is an **interpretation** of a legacy grammar whose parser is missing — every departure is a numbered assumption in [`docs/ems-seed0-assumptions.md`](ems-seed0-assumptions.md) awaiting a human tick. **Two are known behaviour changes vs the legacy service:** MERIVAL ingestion events now forward to the capital DAG (they never did — the legacy rule had a typo), and a context spelling `runCategory` now matches where only `run-category` used to |
 | 🔴 **`ems.auth.mode` defaults to `local`** — EMS then accepts tokens it issued itself via `POST /token` | Every endpoint still needs a token and the right group, but a shared environment must set `ems.auth.mode=entra` plus `spring.security.oauth2.resourceserver.jwt.issuer-uri`. Startup warns while a random signing key is in use |
-| 🟡 **No `ReconciliationSweep`** | DLQ depth, consumer lag, and overdue-run metrics are unpublished |
-| 🟡 **No integration test has been observed green** | Testcontainers cannot reach Docker on the development workstation; the suite auto-skips and awaits CI. The last local build ran **151 unit tests green, 84 integration tests skipped** |
+| 🔴 **No performance validation at scale** | The "< 50 ms p95" target has **never been measured**. The harness exists (`mvn verify -Pperf`, 10 M events + 1 M contexts) but needs Docker and CI, so it has not run once. Treat every latency figure in this guide as a target |
+| 🟡 **No integration test has been observed green** | Testcontainers cannot reach Docker on the development workstation; the suite auto-skips and awaits CI. The last local build ran **207 unit tests green, 99 integration tests skipped** |
+| 🟡 **No dispatch-outcome metric** | Nothing counts Airflow trigger successes vs failures by status. You can see *whether* the backlog drains (`ems_outbox_pending_age_seconds`) and read `last_error`, but not the 4xx/5xx mix at a glance |
 | 🟡 **EDF Context API contract is provisional** | `GET /context/{id}` with a static bearer token is a placeholder; WireMock stands in for the real service |
 | 🟡 **Normalization value maps are provisional** | Only `D/M/Q → DAILY/MONTHLY/QUARTERLY` and `AMERICAS → AMER` are mapped; everything else passes through upper-cased |
-| 🟡 **No performance validation at scale** | The "< 50 ms p95" target has not been measured against 10 M rows |
 | 🟡 **No retention job** | Tables grow unbounded until the Phase-6 DAG ships |
 | 🟢 **`/gate/groups` has no group timestamp** | Fetch group age via `GET /event` if a staleness policy needs it |
 | 🟢 **`/run/status` `scheduled` mirrors `started`** | Cannot distinguish scheduled-but-not-started |
@@ -753,14 +874,25 @@ mvn -B -ntp -f ems/pom.xml test
 
 # One test
 mvn -B -ntp -f ems/pom.xml test -Dtest=SubscriptionServiceTest
+
+# Performance gate — needs Docker and a lot of patience (10 M events + 1 M contexts)
+mvn -B -ntp -f ems/pom.xml verify -Pperf
 ```
 
 Expected on a machine without a reachable Docker daemon:
 
 ```
-Surefire (unit):        Tests run: 115, Failures: 0, Errors: 0, Skipped: 0
-Failsafe (integration): Tests run:  74, Failures: 0, Errors: 0, Skipped: 74
+Surefire (unit):        Tests run: 207, Failures: 0, Errors: 0, Skipped: 0
+Failsafe (integration): Tests run:  99, Failures: 0, Errors: 0, Skipped: 99
 BUILD SUCCESS
+```
+
+The 6 `perf` tests are tagged and excluded from both counts; `-Pperf` is the only way to reach them, and it writes `ems/target/perf-report.txt`. **It has never been run** — see §10.
+
+The Helm chart has its own check, which does run locally if you have `helm`:
+
+```bash
+bash ems/deploy/helm/check.sh     # helm lint + 16 assertions over the rendered output
 ```
 
 ### Run locally
@@ -771,18 +903,20 @@ mvn -f ems/pom.xml spring-boot:run \
   -Dspring-boot.run.arguments="--ems.consumer.enabled=false"
 ```
 
-Disabling the consumer gives you an API-only pod that needs no Kafka. Flyway migrates `V1`–`V5` on startup against the configured PostgreSQL.
+Disabling the consumer gives you an API-only pod that needs no Kafka. Flyway migrates `V1`–`V5` on startup against the configured PostgreSQL — **schema only**. The `local` profile does not load `seed-0`, so the `subscription` table starts empty and every event would be dropped at the persist gate; add rules via `PUT /admin/subscriptions` (§7.4), or run with `--spring.flyway.locations=classpath:db/migration,classpath:db/seed` to get the 16 seeded rules.
 
 ### Where things live
 
 | Path | Contents |
 |---|---|
 | [`ems/src/main/java/com/orchestration/ems/`](../ems/src/main/java/com/orchestration/ems/) | Application code — 9 packages ([spec §4.2](ems-technical-specification.md#42-package-map)) |
-| [`ems/src/main/resources/db/migration/`](../ems/src/main/resources/db/migration/) | Flyway `V1`–`V5` |
+| [`ems/src/main/resources/db/migration/`](../ems/src/main/resources/db/migration/) | Flyway `V1`–`V5` — **schema only** |
+| [`ems/src/main/resources/db/seed/`](../ems/src/main/resources/db/seed/) | `V6__subscription_seed0.sql` — the 16 `seed-0` rules, applied only where a profile lists this location |
+| [`docs/ems-seed0-assumptions.md`](ems-seed0-assumptions.md) | **The sign-off register for those rules.** Read it before trusting them |
 | [`ems/src/test/resources/samples/`](../ems/src/test/resources/samples/) | Real MEG / CALC / Merival payload fixtures |
-| [`ems/src/test/resources/fixtures/subscriptions_seed0.json`](../ems/src/test/resources/fixtures/subscriptions_seed0.json) | The `seed-0` rule translation + provenance |
+| [`ems/src/test/resources/fixtures/subscriptions_seed0.json`](../ems/src/test/resources/fixtures/subscriptions_seed0.json) | Test-side copy of the seed + provenance; a test asserts it matches `V6` exactly |
 | [`shared/canonical-conformance/`](../shared/canonical-conformance/) | Cross-engine `dag_run_id` vectors — **the** Java ↔ Python contract |
-| [`ems/deploy/helm/ems/`](../ems/deploy/helm/ems/) | Helm chart |
+| [`ems/deploy/helm/ems/`](../ems/deploy/helm/ems/) | Helm chart — deployment, config, alert rules, dashboard |
 
 ### Rules for contributors
 
@@ -830,8 +964,16 @@ Disabling the consumer gives you an API-only pod that needs no Kafka. Flyway mig
 | `ems.auth.principal-claim` | `sub` | The claim naming the caller — the value audited into `decided_by`/`replayed_by`/`updated_by` |
 | `ems.auth.users[]` | empty | HTTP Basic accounts (`username`, `password` with a `{bcrypt}` prefix, `groups`) |
 | `ems.auth.local.signing-key` | — | HS256 secret for `local` mode; blank ⇒ random per process (dev only) |
+| `ems.recon.enabled` | `true` | The monitoring backstop that publishes DLQ depth, outbox age, overdue runs and consumer lag. **Leave it on** — it is deliberately independent of ingestion and dispatch so it still reports on a pod that is doing nothing |
+| `ems.recon.interval-ms` | `60000` | How often those gauges refresh — also how long an alert takes to clear after you fix something |
+| `ems.recon.overdue-window` | `6h` | How long a run may sit with no terminal event before it counts as overdue |
+| `ems.recon.horizon` | `7d` | Lookback bound for the overdue query. A run older than this leaves the window — raise it and the query gets slower |
+| `ems.recon.kafka.enabled` | `true` | Set `false` where there is no reachable broker. The two Kafka gauges then publish nothing; the three SQL gauges are unaffected |
+| `ems.recon.kafka.timeout-ms` | `5000` | Bounds every broker call the probe makes |
 
 Profiles: `local` · `azure` · `shadow` (dispatch off) · `live` (dispatch on).
+
+**Profiles also decide whether the `seed-0` rules load.** `shadow`, `live` and `azure` set `spring.flyway.locations: classpath:db/migration,classpath:db/seed`, which applies `V6__subscription_seed0.sql`. The `default` and `local` profiles migrate schema only and leave the `subscription` table empty — which means **every event is dropped at the persist gate** until you add rules yourself (§7.4).
 
 ### 12.3 Vocabularies
 

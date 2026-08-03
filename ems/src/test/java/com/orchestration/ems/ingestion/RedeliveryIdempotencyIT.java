@@ -57,8 +57,8 @@ class RedeliveryIdempotencyIT extends AbstractPostgresIT {
 
     private static final String CONTROL_DAG = "orchestration_control_dag_capital";
     private static final String MERIVAL_BATCH_CEL =
-            "event.source == \"MERIVAL\" && event.additionalData.TYPE == \"INGESTION\" "
-                    + "&& event.additionalData.RUN_TYPE == \"BATCH\"";
+            "event.source == \"merival\" && event.additionaldata.type == \"ingestion\" "
+                    + "&& event.additionaldata.run_type == \"batch\"";
 
     private static final String EVENT = """
             {"id":"evt-mer-batch-1","contextId":"ctx-300","source":"MERIVAL",

@@ -1,0 +1,27 @@
+{{- /*
+A11: the observability transport is Prometheus PULL. This is the object that makes the §10 metrics
+reachable at all — without it the PrometheusRule beside it evaluates against an empty TSDB and every
+alert stays silently green. `path` must match `management.endpoints.web.exposure.include: prometheus`
+in application.yml; `port` is the Service's named port, not a number (Prometheus Operator resolves it).
+*/ -}}
+{{- if .Values.metrics.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "ems.fullname" . }}
+  labels:
+    {{- include "ems.labels" . | nindent 4 }}
+    {{- with .Values.metrics.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "ems.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: http
+      path: {{ .Values.metrics.serviceMonitor.path }}
+      interval: {{ .Values.metrics.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.metrics.serviceMonitor.scrapeTimeout }}
+      scheme: http
+{{- end }}

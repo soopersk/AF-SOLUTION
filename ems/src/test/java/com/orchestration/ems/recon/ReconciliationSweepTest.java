@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,12 +25,14 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
  * Unit proof of {@link ReconciliationSweep} over a mocked {@link ReconRepository} (the real-rows proof is
  * {@code ReconRepositoryIT}). Three properties matter here, and only one of them is "the number is right":
  * <ul>
- *   <li><b>Publication</b> — all three SQL-sourced §10 gauges exist with the table's names and tags.</li>
+ *   <li><b>Publication</b> — all five §10 gauges (three SQL-sourced, two from the mocked
+ *       {@link ConsumerLagProbe}) exist with the table's names and tags.</li>
  *   <li><b>Recovery</b> — a topic that has been fully replayed loses its {@code ems_dlq_depth} series
  *       instead of freezing at its last depth, or the page never clears after the operator fixes it.</li>
  *   <li><b>Degradation</b> — a throwing repository does not escape the scheduled method (that can stop it
  *       being rescheduled, silently disabling the whole backstop) and does not take the healthy gauges
- *       down with it.</li>
+ *       down with it. The Kafka pair degrades the other way on purpose, and that asymmetry is asserted
+ *       too: an empty probe clears its series rather than freezing them.</li>
  * </ul>
  * Plus the reason this bean exists at all: it is present when {@code ems.dispatch.enabled=false}.
  */
@@ -39,17 +42,20 @@ class ReconciliationSweepTest {
     private static final Duration HORIZON = Duration.ofDays(7);
 
     private ReconRepository repo;
+    private ConsumerLagProbe lagProbe;
     private SimpleMeterRegistry meters;
     private ReconciliationSweep sweep;
 
     @BeforeEach
     void setUp() {
         repo = mock(ReconRepository.class);
+        lagProbe = mock(ConsumerLagProbe.class);
         meters = new SimpleMeterRegistry();
         when(repo.oldestPendingOutboxAgeSeconds()).thenReturn(0.0);
         when(repo.overdueInflightRuns(any(), any())).thenReturn(0L);
         when(repo.dlqDepthByTopic()).thenReturn(List.of());
-        sweep = new ReconciliationSweep(repo, meters, WINDOW, HORIZON);
+        when(lagProbe.probe()).thenReturn(List.of());
+        sweep = new ReconciliationSweep(repo, Optional.of(lagProbe), meters, WINDOW, HORIZON);
     }
 
     @Test
@@ -94,6 +100,50 @@ class ReconciliationSweepTest {
         sweep.sweep();
 
         assertThat(meters.find(ReconciliationSweep.DLQ_DEPTH_METRIC).gauges()).isEmpty();
+    }
+
+    @Test
+    void consumerLag_publishesLagAndHeadroomPerPartition() {
+        when(lagProbe.probe()).thenReturn(List.of(
+                new PartitionLag("edf.events", 0, 40, 10_000),
+                new PartitionLag("edf.events", 1, 0, 250)));
+
+        sweep.sweep();
+
+        assertThat(lagSeries(ReconciliationSweep.CONSUMER_LAG_METRIC, "0")).isEqualTo(40.0);
+        assertThat(lagSeries(ReconciliationSweep.CONSUMER_LAG_METRIC, "1")).isEqualTo(0.0);
+        assertThat(lagSeries(ReconciliationSweep.RETENTION_HEADROOM_METRIC, "0")).isEqualTo(10_000.0);
+        assertThat(lagSeries(ReconciliationSweep.RETENTION_HEADROOM_METRIC, "1")).isEqualTo(250.0);
+    }
+
+    /**
+     * The deliberate asymmetry with {@link #aFailingQueryNeitherEscapesNorBlanksItsGauge()}: the probe
+     * reports a failed offsets poll as an empty result, and that must <b>clear</b> the series. A frozen
+     * lag stops rising exactly when lag starts to matter, so a {@code max(ems_consumer_lag) > N} rule
+     * would evaluate for ever against a number that can no longer move.
+     */
+    @Test
+    void consumerLag_emptyProbeClearsBothSeries_ratherThanFreezingThem() {
+        when(lagProbe.probe()).thenReturn(List.of(new PartitionLag("edf.events", 0, 40, 10_000)));
+        sweep.sweep();
+
+        when(lagProbe.probe()).thenReturn(List.of()); // broker unreachable, or the group is gone
+        sweep.sweep();
+
+        assertThat(meters.find(ReconciliationSweep.CONSUMER_LAG_METRIC).gauges()).isEmpty();
+        assertThat(meters.find(ReconciliationSweep.RETENTION_HEADROOM_METRIC).gauges()).isEmpty();
+    }
+
+    /** {@code ems.recon.kafka.enabled=false}: no probe bean, and the three SQL gauges carry on. */
+    @Test
+    void withNoLagProbeAtAll_theSqlGaugesStillPublish() {
+        when(repo.oldestPendingOutboxAgeSeconds()).thenReturn(31.0);
+        SimpleMeterRegistry brokerless = new SimpleMeterRegistry();
+
+        new ReconciliationSweep(repo, Optional.empty(), brokerless, WINDOW, HORIZON).sweep();
+
+        assertThat(brokerless.get(ReconciliationSweep.OUTBOX_AGE_METRIC).gauge().value()).isEqualTo(31.0);
+        assertThat(brokerless.find(ReconciliationSweep.CONSUMER_LAG_METRIC).gauges()).isEmpty();
     }
 
     @Test
@@ -142,8 +192,35 @@ class ReconciliationSweepTest {
                 .run(context -> assertThat(context).doesNotHaveBean(ReconciliationSweep.class));
     }
 
+    /**
+     * The Kafka half has its own switch, for an environment with no reachable broker. Asserted here
+     * because a toggle that does not actually gate the bean is only discovered when someone needs it.
+     * The bootstrap address is deliberately unroutable — {@code Admin.create} must not connect, and a
+     * probe that cannot reach a broker must still not stop the context from starting.
+     */
+    @Test
+    void lagProbeBeanIsPresentByDefault_andRemovedByItsOwnToggle() {
+        ApplicationContextRunner runner = new ApplicationContextRunner()
+                .withInitializer(context -> context.getBeanFactory()
+                        .setConversionService(ApplicationConversionService.getSharedInstance()))
+                .withUserConfiguration(LagProbeTestConfig.class)
+                .withPropertyValues("spring.kafka.bootstrap-servers=localhost:1");
+
+        runner.run(context -> assertThat(context).hasSingleBean(ConsumerLagProbe.class));
+        runner.withPropertyValues("ems.recon.kafka.enabled=false")
+                .run(context -> assertThat(context).doesNotHaveBean(ConsumerLagProbe.class));
+    }
+
     private double gauge(String name) {
         return meters.get(name).gauge().value();
+    }
+
+    /** One {@code {topic="edf.events", partition=...}} series of a Kafka gauge. */
+    private double lagSeries(String name, String partition) {
+        return meters.get(name)
+                .tag(ReconciliationSweep.TOPIC_TAG, "edf.events")
+                .tag(ReconciliationSweep.PARTITION_TAG, partition)
+                .gauge().value();
     }
 
     @Configuration(proxyBeanMethods = false)
@@ -160,4 +237,8 @@ class ReconciliationSweepTest {
             return new SimpleMeterRegistry();
         }
     }
+
+    @Configuration(proxyBeanMethods = false)
+    @Import(ConsumerLagProbe.class) // brings in @ConditionalOnProperty + the bootstrap/group @Value defaults
+    static class LagProbeTestConfig { }
 }

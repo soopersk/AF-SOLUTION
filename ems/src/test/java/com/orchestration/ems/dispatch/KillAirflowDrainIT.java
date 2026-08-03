@@ -9,6 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.net.http.HttpClient;
 import java.time.Duration;
+import java.util.Optional;
 import java.util.function.Supplier;
 
 import javax.sql.DataSource;
@@ -93,7 +94,8 @@ class KillAirflowDrainIT extends AbstractPostgresIT {
         AirflowTriggerClient triggerClient =
                 new AirflowTriggerClient(restClient, MAPPER, noAuth, "/dags/{dagId}/dagRuns");
         dispatcher = new OutboxDispatcher(repo, triggerClient, txManager, 100, 0, 0);
-        sweep = new ReconciliationSweep(new ReconRepository(jdbc), meters,
+        // Optional.empty(): this drill is about the outbox, and no broker is involved in it.
+        sweep = new ReconciliationSweep(new ReconRepository(jdbc), Optional.empty(), meters,
                 Duration.ofHours(6), Duration.ofDays(7));
     }
 

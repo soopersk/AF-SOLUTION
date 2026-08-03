@@ -25,6 +25,9 @@
 
     <properties>
         <java.version>17</java.version>
+        <!-- Failsafe tag filter. Default: run every IT except the §12 perf harness. -Pperf inverts it. -->
+        <ems.it.groups />
+        <ems.it.excludedGroups>perf</ems.it.excludedGroups>
         <!-- Pins that the design calls out explicitly (ems-design §10). Version bumps are a
              deliberate, reviewed act — the CEL engine version is a recomputability anchor
              recorded in routing_decision.engine_version, and must stay in lock-step with the
@@ -191,6 +194,23 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-failsafe-plugin</artifactId>
+                <configuration>
+                    <!--
+                      The §12 perf harness seeds ~10 M events. It is an *IT like the others, so it would
+                      otherwise be picked up by every `mvn verify` and turn a two-minute build into an
+                      hour. Excluded by tag here and re-enabled by -Pperf below; untagged ITs are
+                      unaffected, which is why the existing suite still runs.
+
+                      Driven by PROPERTIES rather than by a profile that re-declares this <configuration>.
+                      A profile-level <configuration combine.self="override"> would discard what this
+                      block inherits from spring-boot-starter-parent — in particular <classesDirectory>,
+                      which points Failsafe at target/classes instead of the fat jar that
+                      spring-boot:repackage leaves behind. Without it every IT fails discovery with
+                      NoClassDefFoundError on a main class, and the message says nothing about the cause.
+                    -->
+                    <groups>${ems.it.groups}</groups>
+                    <excludedGroups>${ems.it.excludedGroups}</excludedGroups>
+                </configuration>
                 <executions>
                     <execution>
                         <goals>
@@ -202,4 +222,24 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!--
+          -Pperf runs the §12 harness and NOTHING else: swapping the tag filter from "exclude perf" to
+          "include only perf" means the ordinary ITs are skipped rather than run alongside a 10 M-row
+          seed. Unit tests still run (Surefire is untouched) — they are seconds, and a perf run against a
+          broken build is noise.
+
+          CI invokes this from a workflow_dispatch-only job. It requires Docker; without one the harness
+          self-skips like every other IT and the run reports zero tests, which is an honest "not measured"
+          rather than a green tick.
+        -->
+        <profile>
+            <id>perf</id>
+            <properties>
+                <ems.it.groups>perf</ems.it.groups>
+                <ems.it.excludedGroups />
+            </properties>
+        </profile>
+    </profiles>
 </project>

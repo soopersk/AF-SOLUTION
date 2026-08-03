@@ -52,6 +52,7 @@ class MetricNamingTest {
     private static final List<String> GAUGES = List.of(
             "ems_registry_version",
             "ems_consumer_lag",
+            "ems_consumer_retention_headroom_records",
             "ems_dlq_depth",
             "ems_overdue_inflight_runs");
 

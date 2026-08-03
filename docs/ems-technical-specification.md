@@ -74,7 +74,7 @@ EMS is deliberately **rule-free**. It evaluates exactly two classes of coarse co
 
 ## 2. Implementation status
 
-The build follows the phase board in [`ems-design.md §13`](../ems-design.md). Current state as of 2026-07-27:
+The build follows the phase board in [`ems-design.md §13`](../ems-design.md). Current state as of 2026-08-02:
 
 ```mermaid
 graph LR
@@ -82,7 +82,7 @@ graph LR
     P1["Phase 1<br/>Foundation"]:::done
     P2["Phase 2<br/>Ingestion + control plane"]:::done
     P3["Phase 3<br/>APIs"]:::partial
-    P4["Phase 4<br/>Ops readiness"]:::todo
+    P4["Phase 4<br/>Ops readiness"]:::partial
     P5["Phase 5<br/>Shadow + cutover"]:::todo
     P6["Phase 6<br/>Lifecycle"]:::todo
 
@@ -115,19 +115,26 @@ graph LR
 | `POST /admin/replay` | `api/AdminController`, `ingestion/DlqReplayService` | ✅ |
 | `PUT /admin/subscriptions` | `api/AdminController`, `SubscriptionRepo.upsertAll` | ✅ |
 | Spring Security (Entra JWT + Basic), `POST /token` | `config/SecurityConfig`, `config/GroupAuthorities`, `api/TokenController` | ✅ |
-| `ReconciliationSweep` | `recon/package-info.java` only | ⏳ **not built** (Phase 4) |
-| `seed-0` subscription migration | fixture only: `src/test/resources/fixtures/subscriptions_seed0.json` | ⏳ **not built** (Phase 4) |
+| `ReconciliationSweep` + `ConsumerLagProbe` | `recon/ReconciliationSweep`, `ConsumerLagProbe`, `ReconRepository` | ✅ |
+| Registry-version gauge | `subscription/RegistryVersionMetrics` | ✅ |
+| Endpoint latency histograms | `config/MetricsConfig` | ✅ |
+| `seed-0` subscription migration | `db/seed/V6__subscription_seed0.sql` (16 rows) | ✅ built — **rows await human sign-off** (§8.8) |
+| Helm chart: alerts, scrape, dashboard, config, PDB | `deploy/helm/ems/templates/*`, `dashboards/ems-overview.json` | ✅ `helm lint` + `check.sh` green locally |
+| Performance harness | `perf/PerfSeeder`, `perf/QueryPerfIT` (`-Pperf`) | ⚠️ **built, never executed** (§21.5) |
 | Retention/archival DAG | — | ⏳ **not built** (Phase 6) |
+| Shadow/cutover stages | — | ⏳ **not started** (Phase 5, §22) |
 
-**Verification caveat (carried from Phase 1).** All `*IT` integration tests are annotated `@Testcontainers(disabledWithoutDocker = true)` and **auto-skip on the development workstation** — Testcontainers cannot reach the local Docker engine (it listens on the `dockerDesktopLinuxEngine` named pipe; docker-java's probe times out). The integration suite's green run is a **CI obligation** ([`.github/workflows/ems-ci.yml`](../.github/workflows/ems-ci.yml)), which is itself inert until the workspace becomes a git repository. **No integration test has been observed green.**
+**Verification caveat (carried from Phase 1).** All `*IT` integration tests are annotated `@Testcontainers(disabledWithoutDocker = true)` and **auto-skip on the development workstation** — Testcontainers cannot reach the local Docker engine (it listens on the `dockerDesktopLinuxEngine` named pipe; docker-java's probe times out). The integration suite's green run is a **CI obligation** ([`.github/workflows/ems-ci.yml`](../.github/workflows/ems-ci.yml)), which is itself inert until the workspace becomes a git repository. **No integration test has been observed green**, and no CI job has ever run. The Helm chart is the one exception: `helm` v3.2.4 is available locally and [`deploy/helm/check.sh`](../ems/deploy/helm/check.sh) — 16 assertions over `helm lint` plus rendered output — has been **executed and passes**.
 
-Last observed build (`mvn -B -ntp -f ems/pom.xml verify`, 2026-07-27):
+Last observed build (`mvn -B -ntp -f ems/pom.xml verify`, 2026-08-02):
 
 ```
-Surefire (unit):        Tests run: 115, Failures: 0, Errors: 0, Skipped: 0
-Failsafe (integration): Tests run:  74, Failures: 0, Errors: 0, Skipped: 74   ← all auto-skipped
+Surefire (unit):        Tests run: 207, Failures: 0, Errors: 0, Skipped: 0
+Failsafe (integration): Tests run:  99, Failures: 0, Errors: 0, Skipped: 99   ← all auto-skipped
 BUILD SUCCESS
 ```
+
+The 6 `perf` tests are **not** in either count: they are tagged `perf` and excluded by default, reachable only via `mvn verify -Pperf` (§21.5).
 
 ---
 
@@ -251,9 +258,9 @@ Root package: `com.orchestration.ems`.
 
 ---
 
-## 5. Binding invariants (amendments A1–A15)
+## 5. Binding invariants (amendments A1–A18)
 
-These fifteen amendments are **normative**. A1–A5 are design-level; A6–A10 were derived by reading the legacy sources (`old-ems/`, `old-orchestration/`) and correct earlier plan text; A11–A14 were added at the start of Phase 4 (2026-07-28) — A11 from reading the build's own config against its own classpath, A12–A14 from re-reading `old-ems/` for the `seed-0` translation — and A15 was taken as a product decision at the Batch-0 checkpoint, superseding A13's remedy. Every one has a concrete enforcement point in the code.
+These eighteen amendments are **normative**. A1–A5 are design-level; A6–A10 were derived by reading the legacy sources (`old-ems/`, `old-orchestration/`) and correct earlier plan text; A11–A14 were added at the start of Phase 4 (2026-07-28) — A11 from reading the build's own config against its own classpath, A12–A14 from re-reading `old-ems/` for the `seed-0` translation; A15 was taken as a product decision at the Batch-0 checkpoint, superseding A13's remedy; A16 was forced by the perf harness (Batch F) and A17–A18 by the seed audit (Batch H, 2026-08-02). Every one has a concrete enforcement point in the code.
 
 | # | Invariant | Enforced by | Verified by |
 |---|---|---|---|
@@ -272,6 +279,9 @@ These fifteen amendments are **normative**. A1–A5 are design-level; A6–A10 w
 | **A13** | CEL is case-sensitive in **keys and values**; the legacy engine was case-insensitive in both. The `Normalizer` is **not** widened to compensate (it would destroy the ≈-zero `ems_normalization_mutations_total` signal, §9.4). ~~`seed-0` rules carry an explicit `.lowerAscii()` fold and `has()`-guarded either-spelling key access~~ — **remedy superseded by A15** | `Normalizer` deliberately unchanged | `MatchViewTest` (the fold is where the case-sensitivity is answered) |
 | **A14** | The **FORWARD** half of the `seed-0` translation is a signed-off **interpretation**, not a mechanical port (the map-table condition grammar has no parser in the workspace). The PERSIST half remains mechanical | [`docs/ems-seed0-assumptions.md`](ems-seed0-assumptions.md) — one numbered assumption per departure from the literal legacy text, each with a sign-off box | **Human gate.** `Seed0MigrationTest` asserts only that every assumed row carries its `ASSUMPTION-n` citation — it cannot assert correctness |
 | **A15** | Subscription CEL evaluates against a **case-folded matching view**: every object key and every string value in the activation tree is lower-cased recursively, so rule text is all-lowercase paths + all-lowercase literals + plain `==` — no `.lowerAscii()`, no `has()` guards, no either-spelling branches. Routing path **only**: stored JSONB, generated columns, `/run/status`, `/gate/groups` and the Airflow `conf` are untouched, and the fold is **not** in `Normalizer` | `subscription/MatchView#fold`, applied in `SubscriptionService#eventMap`/`#contextMap` after normalization | `MatchViewTest`, `SubscriptionServiceTest`, `Seed0MigrationTest` |
+| **A16** | The §21.5 `EXPLAIN` criterion names two indexes the canonical §13.1 query **cannot reach** — under A10 it filters raw JSONB in four locations with no param→column alias map. The perf harness therefore asserts an index only where one is reachable (`idx_event_task_id` via `/run/status`; PK / `idx_event_context_id` via the id-qualified shape) and **measures the unqualified shape without asserting a plan node or a budget on it**. The index set is kept; A10 is **not** re-opened | `perf/QueryPerfIT` — recursive plan-tree walk over `EXPLAIN (FORMAT JSON)`, asserting index use where reachable and no `Seq Scan` | ⏳ **never executed** — see §21.5 |
+| **A17** | The `post_filter_control_dag_map` condition grammar is **`$.<prefix>` + one or more `.key:value` pairs, comma-separating `$.`-rooted groups, all ANDed** — *derived* from two rows using the identical construction, not inferred from a rule's name. Consequence: `FRCA_CURATION`'s repeated `tenant:FRCA` restates the prefix's first key, so collapsing it is information-preserving. **Narrows A14** (the FORWARD half is a derivation from consistent samples, still short of reading the parser); ASSUMPTION-4 is **void** | `db/seed/V6__subscription_seed0.sql` — the FRCA_CURATION and FRCA_CALC rows, each citing its assumption | **Human gate** ([`ems-seed0-assumptions.md`](ems-seed0-assumptions.md)); `parseCondition` remains absent from `old-ems/` |
+| **A18** | The A15 matching view **also aliases hyphenated keys**: every key containing `-` is additionally exposed with hyphens removed, and a camelCase spelling **wins** over a hyphenated one. Precedence is structural, not document order — camelCase folds directly onto the hyphen-free name and the alias pass never overwrites an existing key. The hyphenated key is retained. Same scope limits as A15. **This widens matching versus legacy** and is an expected shadow-parity diff | `MatchView#addHyphenFreeAliases` | `MatchViewTest` (both emission orders pinned); ASSUMPTION-9 |
 
 ### 5.1 A10's consequence for query-parameter canonicalization
 
@@ -630,14 +640,20 @@ Legacy filters are flat JSONPath-equality maps: an array of objects is an **OR a
 
 ```
 {"$.source":"MERIVAL", "$.additionalData.TYPE":"INGESTION", "$.additionalData.RUN_TYPE":"BATCH"}
-  → event.source == "MERIVAL" && event.additionalData.TYPE == "INGESTION"
-    && event.additionalData.RUN_TYPE == "BATCH"
+  → event.source == "merival" && event.additionaldata.type == "ingestion"
+    && event.additionaldata.run_type == "batch"
 
 {"$.context.data.run-category":"TOPSIDE.*"}                (FORWARD only)
-  → context.data["run-category"].startsWith("TOPSIDE")
+  → context.data.runcategory.startsWith("topside")
 ```
 
-> **Translation notes.** Legacy filter matching was **fully case-insensitive** (whole event JSON, path and value lower-cased) and a trailing `.*` was a `Regex.quote(prefix) + ".*"` **literal-prefix** match, not free regex. The subscription CEL plus the `Normalizer` reproduce this; the `TOPSIDE.*` clause becomes `startsWith("TOPSIDE")`, as in the `seed-0` fixture.
+> **Translation notes.** Legacy filter matching was **fully case-insensitive** — it lower-cased the whole event JSON *and* the JSONPath ([`JsonFilterRuleset.scala:17,22`](../old-ems/JsonFilterRuleset.scala)) — and a trailing `.*` was a `Regex.quote(prefix) + ".*"` **literal-prefix** match, not free regex.
+>
+> **What reproduces that is the A15 matching view, not the `Normalizer`.** CEL is case-sensitive in keys and values (A13); `Normalizer` upper-cases a short enumerated list and never touches keys at all, so it cannot stand in. Instead `MatchView#fold` lower-cases every object key and every string value of the activation tree, and (A18) exposes every hyphenated key under a hyphen-free alias with camelCase taking precedence. The rule dialect is therefore **exactly one spelling**: lowercase paths, lowercase literals, plain `==` / `&&` / `startsWith` — no `.lowerAscii()`, no `has()` guards, no either-spelling branches. That is a product requirement, not an aesthetic one: these rules are maintained by DAG authors.
+>
+> Two consequences visible in the output above. The legacy value literals (`data-update`, `frca`, `topside`) transfer **verbatim**, which is what keeps the PERSIST half mechanical. And `run-category` — which the legacy row spells with a hyphen and half the payload families spell `runCategory` — becomes the single name `runcategory`, matching what `V1`'s generated columns already COALESCE (A8).
+
+Two mismatches between the legacy grammar and this translation are *not* mechanical and are tracked as sign-off items: the map-table condition grammar (A14, narrowed by **A17** to a derivation from two consistent rows rather than an inference from a rule's name) and A18's hyphen-insensitivity, which **widens** matching versus legacy and is therefore an expected shadow-parity diff.
 
 ### 8.7 Naming collision — do not confuse
 
@@ -648,19 +664,26 @@ Legacy filters are flat JSONPath-equality maps: an array of objects is an **OR a
 
 Subscription CEL compares the former; row ownership is the latter.
 
-### 8.8 `seed-0` inventory (fixture, not yet a migration)
-
-[`ems/src/test/resources/fixtures/subscriptions_seed0.json`](../ems/src/test/resources/fixtures/subscriptions_seed0.json) holds the mechanical translation used by tests:
+### 8.8 `seed-0` inventory (migration `V6`)
 
 | Stage | Tenant | Rows |
 |---|---|---|
-| `PERSIST` | `PLATFORM` | 7 — FRCA (all); AQUA_CCR × {INTRA-MONTH-ADJUSTED, INTRA-MONTH-UNADJUSTED}; MERIVAL INGESTION × {BATCH, INTRA}; RWA MR MONTHLY; CVA MR MONTHLY |
-| `FORWARD` | `CAPITAL` → `orchestration_control_dag_capital` | 8 — FRCA CURATION (with the `context.data["run-category"].startsWith("TOPSIDE")` clause), FRCA CALC_EVENT FINISH, AQUA_CCR ×2, MERIVAL BATCH/INTRA, RWA, CVA |
+| `PERSIST` | `PLATFORM` | 7 — FRCA (all); AQUA_CCR × {intra-month-adjusted, intra-month-unadjusted}; MERIVAL ingestion × {batch, intra}; RWA MR monthly; CVA MR monthly |
+| `FORWARD` | `CAPITAL` → `orchestration_control_dag_capital` | 8 — FRCA CURATION (with the `context.data.runcategory.startsWith("topside")` clause), FRCA CALC_EVENT finish, AQUA_CCR ×2, MERIVAL batch/intra, RWA, CVA |
 | `FORWARD` | `NSFR` → `orchestration_control_dag_liquidity` | 1 — **disabled** |
 
-16 rows in total.
+16 rows in total. Without them the `subscription` table is empty on a fresh deploy and **every event is dropped at the persist gate**, so the seed is not optional furniture.
 
-Provenance is recorded alongside in `subscriptions_seed0.provenance.md`. Loading these rows into a real environment is Phase 4 work and is gated on §24 item 3 (per-environment deltas).
+**The seed ships in a separate Flyway location, not in `db/migration`.** [`db/seed/V6__subscription_seed0.sql`](../ems/src/main/resources/db/seed/V6__subscription_seed0.sql) is picked up only where `spring.flyway.locations` names it — the `shadow`, `live` and `azure` profiles. The `default` and `local` profiles migrate schema only.
+
+> **Why the split.** Schema and data have different blast radii. A dev box or a `@DataJdbcTest` slice wants V1–V5 and an empty table it controls; a deployed environment wants rows the moment the schema exists. Folding the seed into `db/migration` would force 16 opinionated rows onto every test that only wanted a table, and folding it in *later* is impossible once a checksum is recorded. Keeping it a location makes per-environment deltas (§24 item 3) a matter of which locations a profile lists, rather than a migration rewrite.
+
+Each `INSERT` is an upsert on `(tenant_id, stage, rule_name)` — re-running is a no-op, so an environment can be re-seeded after a manual edit without a Flyway repair. Every row carries `updated_by = 'seed-0-migration'` and `registry_version = 'seed-0'`, which is what makes a hand-edit distinguishable from the seed in an audit, and what feeds `ems_registry_version` (§17).
+
+**The rows are not verified — they are signed off.** Per A14 and A17 the FORWARD half is an interpretation of a grammar whose parser is absent from the workspace. Every departure from the literal legacy text is a numbered assumption in **[`docs/ems-seed0-assumptions.md`](ems-seed0-assumptions.md)**, each with a sign-off box, and each cited in a comment above the row it justifies. `Seed0MigrationTest` asserts the citations are present and that the migration and the test fixture carry byte-identical rules; it **cannot** assert that the rules are right. Two assumptions are known to change behaviour versus legacy and must be declared as expected diffs before the §22 shadow run:
+
+- **ASSUMPTION-1** (`MERYVAL` → `merival`, signed off): legacy never forwarded MERIVAL ingestion events to `orchestration_control_dag_capital`, because the typo matched nothing. EMS will. The capital control DAG must absorb the additional runs.
+- **ASSUMPTION-9** (A18 hyphen aliasing): a context carrying `runCategory` rather than `run-category` now matches `cap_data_update.FRCA_CURATION` where legacy would not have forwarded it.
 
 ---
 
@@ -819,8 +842,9 @@ BEGIN TRANSACTION
                          nextEligible[id] := now() + backoff(attempts)
         NON_RETRIABLE -> same as RETRIABLE + ERROR-level log
 COMMIT
-refresh ems_outbox_pending_age_seconds gauge
 ```
+
+> `ems_outbox_pending_age_seconds` is **not** refreshed here. It is owned by `ReconciliationSweep`, which exists whether or not the dispatcher does — see §17, property 1.
 
 **Concurrency.** Every pod runs a dispatcher. `FOR UPDATE SKIP LOCKED` makes concurrent drains safe — each tick claims a **disjoint** slice for the life of its transaction. The row locks are held while delivering, which is why the claim → deliver → mark cycle must run inside one transaction.
 
@@ -1213,6 +1237,12 @@ The one deliberate narrowing: §4.5:220's parenthetical second mode ("or re-emit
 | `ems.dispatch.batch-size` | `100` | Rows claimed per tick |
 | `ems.dispatch.base-backoff-seconds` | `30` | Delivery backoff base |
 | `ems.dispatch.max-backoff-seconds` | `600` | Delivery backoff cap |
+| `ems.recon.enabled` | `true` | Gates `ReconciliationSweep`. **Deliberately ungated by consumer/dispatch state** — the sweep must publish on a pod doing nothing else. `false` is an explicit opt-out |
+| `ems.recon.interval-ms` | `60000` | Sweep tick |
+| `ems.recon.overdue-window` | `6h` | A run whose last event is older than this and that never reached a terminal event counts toward `ems_overdue_inflight_runs` |
+| `ems.recon.horizon` | `7d` | Bounds the overdue lookback so the query rides `idx_event_created_at` instead of scanning history |
+| `ems.recon.kafka.enabled` | `true` | Gates `ConsumerLagProbe`. `false` for an environment with no reachable broker — the two Kafka gauges then publish nothing; the three SQL gauges are unaffected |
+| `ems.recon.kafka.timeout-ms` | `5000` | Bounds every `AdminClient` call |
 | `ems.airflow.base-url` | `http://localhost:8082/api/v1` | Airflow REST root (**include** the API prefix) |
 | `ems.airflow.trigger-path` | `/dags/{dagId}/dagRuns` | POST path template |
 | `ems.airflow.auth-header` | `""` | Provisional static `Authorization` value; blank ⇒ no header |
@@ -1251,23 +1281,40 @@ Secrets are **never** in `application.yml`. In-cluster they arrive via Vault Age
 
 ## 17. Observability
 
-Micrometer → OpenTelemetry (`micrometer-registry-otlp`). Actuator exposes `health`, `info`, `prometheus`, `metrics`, with K8s liveness/readiness probe groups enabled.
+**Transport is Prometheus pull, not OTLP push (A11).** Every pod exposes `/actuator/prometheus`; a `ServiceMonitor` in the Helm chart tells the Prometheus Operator to scrape it. `micrometer-registry-otlp` stays on the classpath but `management.otlp.metrics.export.enabled` is `false` — the collector in §19 is a tracing path, not the metrics path. Actuator also exposes `health`, `info`, `metrics`, with K8s liveness/readiness probe groups enabled.
+
+Every metric below is emitted by code in this build; none is planned.
 
 | Metric | Type | Emitted by | Alert |
 |---|---|---|---|
-| `ems_events_consumed_total{topic,outcome}` | counter | consumer | — |
-| `ems_events_dropped_total{source}` | counter | `IngestionService` (L0 zero-match) | **warn** — per-source drop-rate anomaly (the misconfigured-subscription detector) |
-| `ems_subscription_verdicts_total{tenant,decision}` | counter | ⏳ planned | anomaly: tenant volume drop |
+| `ems_events_consumed_total{topic,outcome}` | counter | `IngestionService`, `EventConsumer`, `KafkaConfig` (outcomes in `IngestOutcome`) | — |
+| `ems_events_dropped_total{source}` | counter | `IngestionService` (L0 zero-match) | **warn** — `EmsDropRateAnomaly` |
+| `ems_subscription_verdicts_total{tenant,decision}` | counter | `IngestionService` | **warn** — `EmsSubscriptionVerdictsDrop` |
 | `ems_context_fetch_total{source=cache\|db\|edf}` | counter | `ContextResolver` | — |
-| `ems_normalization_mutations_total{field}` | counter | `Normalizer` | **warn** — any nonzero reviewed before cutover (§9.4) |
-| `ems_outbox_pending_age_seconds` | gauge | `OutboxDispatcher` | **page** — oldest > 10 min |
-| `ems_dlq_depth{topic}` | gauge | ⏳ planned (`ReconciliationSweep`) | **page** — > 0 for 5 min |
-| `ems_consumer_lag{topic,partition}` (+ headroom vs retention) | gauge | ⏳ planned | **page** on sustained lag; **page early** when lag age approaches retention |
-| `ems_overdue_inflight_runs` | gauge | ⏳ planned | **warn** — STARTED events with no terminal past a coarse global window |
-| `ems_registry_version{component,version}` | info-gauge | ⏳ planned (Phase B+) | **warn** — divergence > 30 min |
-| Per-endpoint latency histograms (`/event`, `/run/status`, `/gate/groups`) | histogram | Actuator | **warn** — p95 regression |
+| `ems_normalization_mutations_total{field}` | counter | `Normalizer`; `MatchView` logs fold collisions but does **not** increment it (§9.4, A15) | **warn** — `EmsNormalizationMutations` |
+| `ems_outbox_pending_age_seconds` | gauge | **`ReconciliationSweep`** — *not* `OutboxDispatcher` | **page** — `EmsOutboxBacklogStale` (only when `dispatch.enabled`) |
+| `ems_dlq_depth{topic}` | gauge | `ReconciliationSweep` (`MultiGauge`, overwrite) | **page** — `EmsDlqDepthNonZero` |
+| `ems_consumer_lag{topic,partition}` | gauge | `ConsumerLagProbe` via `ReconciliationSweep` | **page** — `EmsConsumerLagSustained`; **warn** — `EmsLagProbeSilent` |
+| `ems_consumer_retention_headroom_records{topic,partition}` | gauge | `ConsumerLagProbe` | **page** — `EmsRetentionHeadroomLow` |
+| `ems_overdue_inflight_runs` | gauge | `ReconciliationSweep` ← `RunStatusRepository` | **warn** — `EmsOverdueInflightRuns` |
+| `ems_registry_version{component,version}` | info-gauge | `RegistryVersionMetrics` ← `SubscriptionRepo` | **warn** — `EmsRegistryDivergence` |
+| `http_server_requests_seconds_bucket{uri}` | histogram | Actuator; buckets enabled for `/event`, `/run/status`, `/gate/groups` only, by `MetricsConfig` | **warn** — `EmsEndpointP95Regression` |
 
-> Metrics marked ⏳ require `recon/ReconciliationSweep`, which is Phase-4 work and currently a documentation stub.
+**Three properties of this table are load-bearing and enforced by test** (`MetricNamingTest`, `AlertRuleCoverageTest`):
+
+1. **`ems_outbox_pending_age_seconds` is owned by the sweep, not the dispatcher.** `OutboxDispatcher` is conditional on `ems.dispatch.enabled=true`, so in the `shadow` profile — the one profile where outbox rows accumulate *by design* — a dispatcher-owned gauge would not exist at all. The sweep is ungated (`ems.recon.enabled`, default `true`) precisely so the silences that matter stay visible on a pod that is neither consuming nor dispatching. The **alert**, conversely, *is* gated on `dispatch.enabled`: with no dispatcher the age climbs forever and a page would be pure noise.
+2. **Retention headroom is a proxy, and is named as one.** It counts records between the log start offset and the group's committed offset. It is not lag *age*, which is what §10 asks for — the broker exposes no cheap per-partition age — but headroom collapses toward zero for exactly the same reason age approaches retention, and it is available from one `AdminClient` poll. A page on a low headroom is the early warning the design wanted.
+3. **`ems_dlq_depth` is best-effort by construction.** It is `count(*)` over unreplayed `dlq_record` rows, published as a `MultiGauge` with overwrite semantics so a topic that has been fully replayed *disappears* rather than freezing at its last depth — otherwise the page would keep firing after the operator finished the work. The authoritative record of a poison event remains the row itself and the DLQ topic (§12.2); the gauge is triage depth, not an audit trail.
+
+The Kafka pair degrades differently from the SQL gauges, deliberately: a failing SQL refresh leaves its gauge at the last-known value (stale-but-present, so rules still evaluate), while `ConsumerLagProbe` **clears** its series on failure. A stale backlog age is still a fact about the database; a stale lag is a number that stopped rising exactly when lag started to matter, and no threshold rule would ever fire against it. `EmsLagProbeSilent` (`absent(ems_consumer_lag)`) is what covers the cleared case, gated on `alerts.expectConsumerLag` so an API-only deployment does not page for a probe it never wanted.
+
+### 17.1 Alert rules as shipped
+
+The eleven rules live in [`deploy/helm/ems/templates/prometheusrule.yaml`](../ems/deploy/helm/ems/templates/prometheusrule.yaml), in groups `ems.page` (4) and `ems.warn` (7). Thresholds are `values.yaml` knobs, not literals, and every rule carries a `runbook` annotation pointing at a user-guide section.
+
+`AlertRuleCoverageTest` binds the three artifacts together so none can drift: every `ems_*` name in a rule expression must be a **literal found in `src/main/java`**; every §10 metric with an alert must have a rule; every `runbook` reference must resolve to a real heading in [`ems-user-guide.md`](ems-user-guide.md); and the p95 rule may quantile only the URIs in `MetricsConfig.TIMED_URIS`. A typo'd metric name in a `PrometheusRule` is otherwise invisible — the alert simply never fires. CI additionally runs `promtool check rules` over the rendered `.spec`.
+
+The Grafana dashboard ships the same way ([`dashboards/ems-overview.json`](../ems/deploy/helm/ems/dashboards/ems-overview.json), mounted by the sidecar `grafana_dashboard: "1"` convention). It lives **outside** `templates/` so that its `{{outcome}}` legend formats are not evaluated by the Helm engine.
 
 ---
 
@@ -1331,7 +1378,28 @@ flowchart TB
 | Azure identity | Workload Identity; the JDBC URL flips auth to Entra |
 | Profile | `springProfile: shadow` → `live` at cutover |
 
-**The dispatcher runs in every pod.** `FOR UPDATE SKIP LOCKED` makes concurrent drains safe, so no leader election or singleton deployment is needed.
+**The dispatcher runs in every pod.** `FOR UPDATE SKIP LOCKED` makes concurrent drains safe, so no leader election or singleton deployment is needed. The same is true of `ReconciliationSweep`: every pod publishes the same gauges from the same committed state, and Prometheus deduplicates by taking `max`/`min` across pods in the alert expressions (§17.1).
+
+### 19.1 Chart inventory
+
+[`ems/deploy/helm/ems/`](../ems/deploy/helm/ems/) — nine templates, one dashboard, one values file:
+
+| File | Ships | Gated by |
+|---|---|---|
+| `deployment.yaml` | Pod spec, `envFrom` the ConfigMap, Vault annotations, config checksum | — |
+| `configmap.yaml` | **Non-secret wiring only** — Kafka/EDF/Airflow/auth/recon settings | — |
+| `service.yaml`, `hpa.yaml` | `ClusterIP` 8080; HPA 3–10 | `hpa.enabled` |
+| `poddisruptionbudget.yaml` | `minAvailable: 2` (below the HPA floor of 3, so a drain can always proceed) | `pdb.enabled` |
+| `servicemonitor.yaml` | Prometheus Operator scrape of `/actuator/prometheus` (A11) | `metrics.serviceMonitor.enabled` |
+| `prometheusrule.yaml` | The 11 §17.1 alert rules | `metrics.prometheusRule.enabled` |
+| `dashboard-configmap.yaml` | `dashboards/ems-overview.json` via `.Files.Get`, labelled `grafana_dashboard: "1"` | `metrics.dashboard.enabled` |
+
+Two deployment-time correctness properties are worth stating because both were live defects found in Batch E:
+
+1. **Env-var spelling.** Spring maps an env var to a property by lower-casing, turning `_` into `.` and **removing hyphens** — so `EMS_EDF_BASE_URL` binds `ems.edf.base.url`, which does not exist, and the pod silently keeps its `localhost` default. The correct form is `EMS_EDF_BASEURL`. The ConfigMap uses the hyphen-free spelling throughout and records why in a comment.
+2. **`required` guards.** `kafka.bootstrapServers`, `consumer.topics`, `edf.baseUrl`, `airflow.baseUrl`, `auth.issuerUri` and the three group ids are `required` — the chart **refuses to render** without them rather than deploying a pod pointed at `localhost`. `check.sh` proves each guard still guards.
+
+Secrets never appear in the ConfigMap. Vault Agent injects them as **files** (`agent-inject-secret-*` / `agent-inject-template-*`, templates configured in `values.yaml` because values files are not themselves rendered by Helm), read back via `SPRING_CONFIG_IMPORT=optional:file:/vault/secrets/…`. A `checksum/config` annotation on the pod template forces a rollout when the ConfigMap changes.
 
 ---
 
@@ -1412,9 +1480,23 @@ Phase 3's exit criterion is "contract suites green **vs recorded current respons
 
 Consequently, "contract green" means green **vs source-derived golden fixtures**, not vs live production bytes. **True production byte-parity is the shadow stage (§22 stage 1)** — it is not achievable in Phase 3 and is not claimed.
 
-### 21.5 Performance gate (⏳ pending, Phase 4)
+### 21.5 Performance gate (⏳ **harness built, never executed**)
 
-Seed 10 M synthetic events + 1 M contexts; assert the canonical query p95 **< 50 ms**, `/run/status` p95 **< 50 ms**, and an `EXPLAIN` assertion that the plan uses `idx_event_task_id` / `idx_context_rep_freq_region` with **no sequential scans**.
+The harness exists — [`perf/PerfSeeder`](../ems/src/test/java/com/orchestration/ems/perf/PerfSeeder.java) and [`perf/QueryPerfIT`](../ems/src/test/java/com/orchestration/ems/perf/QueryPerfIT.java), 6 tests tagged `perf`. `PerfSeeder` builds **10 M events + 1 M contexts** server-side (`INSERT … SELECT … FROM generate_series` in 250 k chunks, 10 events per context, 2 per task) and finishes with `ANALYZE`. `QueryPerfIT` then measures p95 in microseconds and walks the `EXPLAIN (FORMAT JSON)` plan tree recursively.
+
+The `perf` tag is **excluded by default** (`ems.it.excludedGroups`); `mvn verify -Pperf` flips both properties and is wired to a `workflow_dispatch`-only CI job that uploads `target/perf-report.txt`.
+
+| Assertion | Budget |
+|---|---|
+| `/run/status` p95, and plan uses `idx_event_task_id` | **< 50 ms** |
+| Id-qualified §13.1 shape p95, and plan uses PK / `idx_event_context_id` | **< 50 ms** |
+| Unqualified §13.1 shape (4-location JSONB OR) | **measured and recorded, no budget** — A16 |
+| No `Seq Scan` anywhere in the asserted plans | — |
+| `idx_context_rep_freq_region` is *sound* (proven against a promoted-column query, not a read path) | — |
+
+Three limits are stated rather than papered over. **A16**: under A10 the canonical `/event` query reaches no index at all, so a budget on it would be a budget on a sequential scan — it is recorded for trend, not asserted. **HTTP overhead is not measured** — these are repository-level timings against a `SingleConnectionDataSource`, so the numbers exclude serialization, security and Tomcat. And most importantly:
+
+> ⚠️ **This gate has never run.** It requires Docker, which is unreachable on the development workstation, and the CI job requires a git repository that does not exist. All 6 tests skip. **The §13 Phase-4 exit criterion is therefore not met**, and every "< 50 ms" claim in this document remains a design target with no measurement behind it.
 
 ---
 
@@ -1508,7 +1590,7 @@ Boundary events processed by **both** services derive the same `dag_run_id` from
 | 1a | `LBD` = compact `yyyyMMdd` logical business date; which column each family's DATASET CHECK binds | **Structure answered**; per-family binding open | §13 alias handling |
 | 1b | Complete query-param alias inventory from sensor code | **Open** — gates any decision to canonicalize param values (§5.1) | Controller mapping, contract tests |
 | 2 | EDF Context REST API: endpoint, auth flow, error contract, rate limits | **Open** — `EdfContextClient` + `RestClientConfig` are provisional stubs; WireMock stands in | EDF client, retry policy |
-| 3 | Per-environment `subscription` seed deltas; confirm the map table (not the `filter.post` property) is what the legacy evaluated; correct sample typos | **Substantially answered**; per-env deltas open | `seed-0` migration, drop/forward parity |
+| 3 | Per-environment `subscription` seed deltas; confirm the map table (not the `filter.post` property) is what the legacy evaluated; correct sample typos | **Answered** — A12 (both inputs, different jobs), A17 (grammar derived), ASSUMPTION-1 (`MERYVAL` typo confirmed). Residual: per-env deltas, expressed as which Flyway locations a profile lists (§8.8) | `seed-0` migration, drop/forward parity |
 | 4 | Backfill should derive from `eventTimestamp`, not load-time `created_at` | **Answered**; column promoted | Retention/backfill fidelity |
 | 5 | Context immutability guarantee from EDF | **Open** | 24 h context-cache validity |
 | 6 | Azure PG version (need ≥ 12 for generated columns; target 16) | **Open** | V1 DDL |
@@ -1523,16 +1605,16 @@ Boundary events processed by **both** services derive the same `dag_run_id` from
 | Gap | Consequence | Owner phase |
 |---|---|---|
 | **`ems.auth.mode` defaults to `local`** — self-issued tokens are accepted unless the deployment sets `entra` | A shared environment left on the default trusts tokens it minted itself | Deployment config (§18); startup warns |
-| **No admin-invocation audit table** | `POST /admin/replay` audits per record (`dlq_record.replayed_at/by`); an invocation that replays nothing leaves only a log line | Phase 4 (needs a V6 table) |
-| **No `ReconciliationSweep`** | `ems_dlq_depth`, `ems_consumer_lag`, `ems_overdue_inflight_runs` are unpublished — three §17 alerts cannot fire | Phase 4 |
-| **No `seed-0` migration** | The subscription table is empty on a fresh deploy ⇒ **every event is dropped at the persist gate** | Phase 4 |
-| **No performance gate** | The < 50 ms p95 claim is unproven at scale | Phase 4 |
+| **No admin-invocation audit table** | `POST /admin/replay` audits per record (`dlq_record.replayed_at/by`); an invocation that replays nothing leaves only a log line | Deferred (needs a new migration) |
+| **The performance gate has never been executed** | The harness is built and wired (§21.5) but requires Docker + CI. **Every "< 50 ms p95" claim is an unmeasured design target, and the §13 Phase-4 exit criterion is not met** | CI (blocked on git init) |
+| **`seed-0` rows are unsigned** | The 16 `V6` rows load, but the FORWARD half is an interpretation (A14/A17). Two assumptions are known behaviour changes vs legacy (ASSUMPTION-1, ASSUMPTION-9) and must be declared as expected diffs before the shadow run | **Human gate** — [`ems-seed0-assumptions.md`](ems-seed0-assumptions.md) |
+| **No dispatch-outcome metric** | §17 has no counter for Airflow trigger success/failure. Delivery health is inferred from `ems_outbox_pending_age_seconds` and `last_error`, which shows *whether* the backlog drains but not the 4xx/5xx mix. Only visible once `dispatch.enabled=true` | Phase 5, when the dispatcher first runs for real |
 | **No retention DAG** | Unbounded table growth | Phase 6 |
-| **No integration test has been observed green** | The pipeline's end-to-end behaviour is asserted only by construction and unit tests | CI (blocked on git init) |
+| **No integration test has been observed green; no CI job has ever run** | The pipeline's end-to-end behaviour is asserted only by construction and unit tests. The Helm chart is the exception — `check.sh` runs and passes locally | CI (blocked on git init) |
 | **`GET /gate/groups` has no per-group timestamp** | Callers needing group age must fall back to `GET /event` | Additive once the heartbeat contract names the field |
 | **`RunStatus.scheduled` collapses into `started`** | The framework cannot distinguish scheduled-but-not-started | Follow-up if the framework needs it |
 | **MEG `successful` flag location is an assumption** | `/run/status` `terminal.successful` may be wrong for MEG COMPLETED events | Needs a real COMPLETED payload |
 
 ---
 
-*Specification derived from [`ems-design.md`](../ems-design.md) (approved design, amendments A1–A15) and the implementation in [`ems/`](../ems/) as of 2026-07-27. Statements about behaviour reflect the code as read; statements about verification reflect what has actually been executed — the local build runs unit tests only, and the integration suite awaits CI.*
+*Specification derived from [`ems-design.md`](../ems-design.md) (approved design, amendments A1–A18) and the implementation in [`ems/`](../ems/) as of 2026-08-02. Statements about behaviour reflect the code as read; statements about verification reflect what has actually been executed — the local build runs unit tests and `helm lint`/`check.sh` only. The integration suite, the performance gate and every CI job await a git repository that does not yet exist.*

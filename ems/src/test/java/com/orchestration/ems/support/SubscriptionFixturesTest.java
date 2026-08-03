@@ -80,6 +80,6 @@ class SubscriptionFixturesTest {
                 .filter(r -> r.ruleName().equals("cap_data_update.FRCA_CURATION"))
                 .findFirst()
                 .orElseThrow();
-        assertThat(frca.whenCel()).contains("context.data[\"run-category\"].startsWith(\"TOPSIDE\")");
+        assertThat(frca.whenCel()).contains("context.data.runcategory.startsWith(\"topside\")");
     }
 }

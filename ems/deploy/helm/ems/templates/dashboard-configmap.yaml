@@ -1,0 +1,22 @@
+{{- /*
+The Grafana dashboard ships in the chart, versioned with the metrics it reads (§13 Phase-4: "in the
+chart, not in a wiki"). The `grafana_dashboard: "1"` label is the Grafana sidecar convention — the
+sidecar watches for ConfigMaps carrying it and loads their contents, so no manual import step exists
+and no dashboard can drift from the release that produced it.
+
+`.Files.Get` reads from the chart root, so the JSON lives at dashboards/ems-overview.json rather than
+under templates/ (anything in templates/ would be rendered as a Go template, and the dashboard JSON
+contains {{ }}-free but brace-heavy PromQL that has no business going through the template engine).
+*/ -}}
+{{- if .Values.metrics.dashboard.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ems.fullname" . }}-dashboard
+  labels:
+    {{- include "ems.labels" . | nindent 4 }}
+    {{ .Values.metrics.dashboard.label }}: "1"
+data:
+  ems-overview.json: |-
+    {{- .Files.Get "dashboards/ems-overview.json" | nindent 4 }}
+{{- end }}

@@ -1,0 +1,169 @@
+{{- /*
+The ems-design §10 alert column, shipped as code beside the service it watches (A11: the transport is
+Prometheus PULL, so the rules belong in the chart, not in a wiki page or a hand-edited Prometheus config).
+
+Two invariants this file is held to by AlertRuleCoverageTest:
+  1. every metric named in an `expr` is a metric this codebase actually registers — a typo here is
+     invisible in production, because a rule against a name that does not exist simply never fires;
+  2. every `runbook` annotation names a section that actually exists in docs/ems-user-guide.md.
+
+Thresholds that are judgement calls are values-file inputs (.Values.alerts.*), never literals here.
+The literals that DO appear (dlq > 0, outbox > 600s, mutations > 0, versions > 1, overdue > 0) are
+design statements from the §10 table, not tuning knobs.
+*/ -}}
+{{- if .Values.metrics.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "ems.fullname" . }}
+  labels:
+    {{- include "ems.labels" . | nindent 4 }}
+    {{- with .Values.metrics.prometheusRule.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    # ---------------------------------------------------------------------------------------------
+    # page — data is being lost, or is about to be. Every one of these is actionable at 3am.
+    # ---------------------------------------------------------------------------------------------
+    - name: ems.page
+      rules:
+        # `by (topic)` is deliberate: an alert that says "some topic has a DLQ" costs the responder the
+        # first ten minutes of the incident. Same reasoning on every aggregation below.
+        - alert: EmsDlqDepthNonZero
+          expr: 'max by (topic) (ems_dlq_depth) > 0'
+          for: 5m
+          labels:
+            severity: page
+          annotations:
+            summary: 'DLQ is non-empty on {{ "{{ $labels.topic }}" }} — events have been rejected as poison and are not routed'
+            runbook: 'docs/ems-user-guide.md §8.1'
+
+        # Gated on the §11 cutover toggle itself, not on a separate alerting flag. While dispatch is off
+        # (shadow), outbox rows are written and deliberately never drained, so the age gauge climbs without
+        # bound and this rule would page continuously on a system behaving exactly as designed. Reading
+        # .Values.dispatch.enabled here means the rule arms itself at cutover with no second switch to
+        # forget — and no way for the two to drift apart.
+        {{- if .Values.dispatch.enabled }}
+        - alert: EmsOutboxBacklogStale
+          expr: 'max(ems_outbox_pending_age_seconds) > 600'
+          for: 5m
+          labels:
+            severity: page
+          annotations:
+            summary: 'Oldest pending outbox row is over 10 minutes old — Airflow triggers are not landing'
+            runbook: 'docs/ems-user-guide.md §8.2'
+        {{- end }}
+
+        - alert: EmsConsumerLagSustained
+          expr: 'max by (topic, partition) (ems_consumer_lag) > {{ .Values.alerts.lagRecords }}'
+          for: 15m
+          labels:
+            severity: page
+          annotations:
+            summary: 'Ingest group is more than {{ .Values.alerts.lagRecords }} records behind on {{ "{{ $labels.topic }}/{{ $labels.partition }}" }}'
+            runbook: 'docs/ems-user-guide.md §8.3'
+
+        # The §10 "lag age approaching retention" early page. Headroom is measured in RECORDS (committed
+        # minus log-start), not in time — see PartitionLag for why the cheap monotone proxy was chosen over
+        # an offsetsForTimes round-trip per partition per tick. It falls toward zero as retention catches
+        # up with the consumer, and it trips BEFORE anything is deleted unread.
+        - alert: EmsRetentionHeadroomLow
+          expr: 'min by (topic, partition) (ems_consumer_retention_headroom_records) < {{ .Values.alerts.headroomRecords }}'
+          for: 5m
+          labels:
+            severity: page
+          annotations:
+            summary: 'Retention is closing on the committed offset for {{ "{{ $labels.topic }}/{{ $labels.partition }}" }} — unread events will be deleted'
+            runbook: 'docs/ems-user-guide.md §8.3'
+
+    # ---------------------------------------------------------------------------------------------
+    # warn — something is wrong with routing correctness or with the signal itself. Business hours.
+    # ---------------------------------------------------------------------------------------------
+    - name: ems.warn
+      rules:
+        # ConsumerLagProbe CLEARS its series when the broker will not answer, rather than freezing them
+        # (ReconciliationSweep's class javadoc explains the asymmetry with the SQL-sourced gauges). That
+        # choice is only safe if the absence itself is alerted on — otherwise a broken probe reads exactly
+        # like a healthy consumer. This rule is the other half of that decision.
+        {{- if .Values.alerts.expectConsumerLag }}
+        - alert: EmsLagProbeSilent
+          expr: 'absent(ems_consumer_lag)'
+          for: 15m
+          labels:
+            severity: warn
+          annotations:
+            summary: 'No consumer-lag series is being published — the lag probe cannot reach the broker, so the two page rules above are blind'
+            runbook: 'docs/ems-user-guide.md §8.3'
+        {{- end }}
+
+        # The misconfigured-subscription detector (§10). Compared against the same window yesterday so a
+        # normal daily shape does not fire it. Caveat, deliberate: a source with NO traffic yesterday has
+        # no right-hand series, so vector matching drops it and this rule stays silent for a brand-new
+        # source. EmsSubscriptionVerdictsDrop covers the inverse (a source that stops), and the first
+        # 24 hours of a new source are covered by the §11 shadow parity job, not by this rule.
+        - alert: EmsDropRateAnomaly
+          expr: 'sum by (source) (rate(ems_events_dropped_total[15m])) > {{ .Values.alerts.dropRatioFactor }} * sum by (source) (rate(ems_events_dropped_total[15m] offset 1d))'
+          for: 30m
+          labels:
+            severity: warn
+          annotations:
+            summary: 'Zero-match drops from {{ "{{ $labels.source }}" }} are more than {{ .Values.alerts.dropRatioFactor }}x yesterday — a subscription rule probably stopped matching'
+            runbook: 'docs/ems-user-guide.md §8.4'
+
+        # The §10 "anomaly: tenant volume drop" row. The mirror image of the rule above: drops rising and
+        # verdicts falling are the two ways a broken rule shows up, depending on whether the tenant lost
+        # ALL its matches (drop) or only some (volume).
+        - alert: EmsSubscriptionVerdictsDrop
+          expr: 'sum by (tenant) (rate(ems_subscription_verdicts_total[1h])) < {{ .Values.alerts.volumeDropFactor }} * sum by (tenant) (rate(ems_subscription_verdicts_total[1h] offset 1d))'
+          for: 30m
+          labels:
+            severity: warn
+          annotations:
+            summary: 'Routing verdicts for tenant {{ "{{ $labels.tenant }}" }} have fallen below {{ .Values.alerts.volumeDropFactor }}x yesterday'
+            runbook: 'docs/ems-user-guide.md §8.4'
+
+        # §4.4: the normalization counter must be reviewed and ~zero BEFORE cutover, which only means
+        # something if a nonzero is surfaced rather than sitting in a dashboard nobody opens.
+        - alert: EmsNormalizationMutations
+          expr: 'increase(ems_normalization_mutations_total[1h]) > 0'
+          for: 5m
+          labels:
+            severity: warn
+          annotations:
+            summary: 'Normalizer rewrote {{ "{{ $labels.field }}" }} on live traffic — every mutation must be reviewed before cutover'
+            runbook: 'docs/ems-user-guide.md §8.8'
+
+        # Per COMPONENT, not globally: §10 tags this gauge {component,version}, and once Phase B adds a
+        # second component the global form would fire on the entirely normal state of two components
+        # sitting at two different versions. Divergence means one component with two live versions.
+        - alert: EmsRegistryDivergence
+          expr: 'count by (component) (count by (component, version) (ems_registry_version)) > 1'
+          for: 30m
+          labels:
+            severity: warn
+          annotations:
+            summary: 'Two subscription registry versions are enabled at once for {{ "{{ $labels.component }}" }} — routing_decision.registry_version no longer identifies one ruleset'
+            runbook: 'docs/ems-user-guide.md §8.9'
+
+        - alert: EmsOverdueInflightRuns
+          expr: 'max(ems_overdue_inflight_runs) > 0'
+          for: 30m
+          labels:
+            severity: warn
+          annotations:
+            summary: 'Runs are STARTED with no terminal event past the reconciliation window — the loss backstop has found something the heartbeat did not'
+            runbook: 'docs/ems-user-guide.md §8.7'
+
+        # Fleet-wide, computed from buckets. MetricsConfig publishes histogram buckets (not client-side
+        # percentiles) for exactly these three URIs precisely so this expression is arithmetically valid
+        # across pods.
+        - alert: EmsEndpointP95Regression
+          expr: 'histogram_quantile(0.95, sum by (le, uri) (rate(http_server_requests_seconds_bucket{uri=~"/event|/run/status|/gate/groups"}[10m]))) > {{ .Values.alerts.endpointP95Seconds }}'
+          for: 15m
+          labels:
+            severity: warn
+          annotations:
+            summary: 'p95 on {{ "{{ $labels.uri }}" }} is over {{ .Values.alerts.endpointP95Seconds }}s — the §12 latency budget is breached'
+            runbook: 'docs/ems-user-guide.md §8.10'
+{{- end }}

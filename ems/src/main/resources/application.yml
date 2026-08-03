@@ -80,6 +80,15 @@ ems:
     # idx_event_created_at rather than scanning history — runs older than it have left the window.
     overdue-window: 6h
     horizon: 7d
+    kafka:
+      # ems_consumer_lag / ems_consumer_retention_headroom_records come from an AdminClient poll of the
+      # ingest group's COMMITTED offsets — broker-side state, so they are published even by a pod that
+      # consumes nothing and even while a partition is parked. The group id is `ems.consumer.group-id`,
+      # shared with the listener so the probe cannot drift onto a different group.
+      # `enabled: false` for an environment with no reachable broker (the two gauges then publish
+      # nothing; the three SQL gauges above are unaffected). timeout-ms bounds every broker call.
+      enabled: true
+      timeout-ms: 5000
   airflow:
     # Outbox → Airflow REST. Basic-auth creds resolved from Vault in-cluster.
     base-url: ""
@@ -135,7 +144,20 @@ ems:
 spring:
   config:
     activate:
+      on-profile: azure
+  # db/seed carries V6 (the seed-0 subscription registry). Deliberately NOT in the default/local
+  # locations: an empty subscription table drops every event, so a shared environment must have the
+  # rules, while a Testcontainers IT or a scratch dev database must be free to supply its own.
+  flyway:
+    locations: classpath:db/migration,classpath:db/seed
+
+---
+spring:
+  config:
+    activate:
       on-profile: shadow
+  flyway:
+    locations: classpath:db/migration,classpath:db/seed
 ems:
   dispatch:
     enabled: false        # §11 stage 1: consume live, persist, write outbox — never dispatch
@@ -145,6 +167,8 @@ spring:
   config:
     activate:
       on-profile: live
+  flyway:
+    locations: classpath:db/migration,classpath:db/seed
 ems:
   dispatch:
     enabled: true         # §11 stage 2: post-flip, dispatch on

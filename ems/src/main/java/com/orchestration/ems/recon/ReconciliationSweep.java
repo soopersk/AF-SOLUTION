@@ -1,6 +1,9 @@
 package com.orchestration.ems.recon;
 
 import java.time.Duration;
+import java.util.List;
+import java.util.Optional;
+import java.util.function.ToLongFunction;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,6 +40,12 @@ import io.micrometer.core.instrument.Tags;
  * throws can stop being rescheduled, which would silently disable the backstop) nor takes the other
  * gauges down with it. Stale-but-present beats absent: an operator can see a flat line, and the alert
  * rules still evaluate.
+ *
+ * <p><b>The Kafka pair is the one exception to that.</b> {@code ems_consumer_lag} and
+ * {@code ems_consumer_retention_headroom_records} come from {@link ConsumerLagProbe}, which yields an
+ * empty result on failure and so <em>clears</em> its series instead of freezing them. A stale backlog age
+ * is still a fact about the database; a stale lag is a number that stopped rising exactly when lag began
+ * to matter, and no threshold rule would ever fire against it.
  */
 @Component
 @ConditionalOnProperty(prefix = "ems.recon", name = "enabled", havingValue = "true", matchIfMissing = true)
@@ -52,23 +61,33 @@ public class ReconciliationSweep {
     public static final String OUTBOX_AGE_METRIC = "ems_outbox_pending_age_seconds";
     /** Runs that started, went quiet and never reached a terminal event (§10 loss backstop). */
     public static final String OVERDUE_RUNS_METRIC = "ems_overdue_inflight_runs";
+    /** Records between the group's committed offset and the log head — a parked partition (§10, page). */
+    public static final String CONSUMER_LAG_METRIC = "ems_consumer_lag";
+    /** Records between the log start and the committed offset — slack before retention deletes (§10). */
+    public static final String RETENTION_HEADROOM_METRIC = "ems_consumer_retention_headroom_records";
 
     public static final String TOPIC_TAG = "topic";
+    public static final String PARTITION_TAG = "partition";
 
     private final ReconRepository repo;
+    private final Optional<ConsumerLagProbe> lagProbe;
     private final Duration overdueWindow;
     private final Duration horizon;
 
     private final MultiGauge dlqDepth;
+    private final MultiGauge consumerLag;
+    private final MultiGauge retentionHeadroom;
 
     /** Last successful readings; a failed refresh leaves the previous value in place (see class javadoc). */
     private volatile double outboxPendingAgeSeconds;
     private volatile long overdueInflightRuns;
 
-    public ReconciliationSweep(ReconRepository repo, MeterRegistry meterRegistry,
+    public ReconciliationSweep(ReconRepository repo, Optional<ConsumerLagProbe> lagProbe,
+            MeterRegistry meterRegistry,
             @Value("${ems.recon.overdue-window:6h}") Duration overdueWindow,
             @Value("${ems.recon.horizon:7d}") Duration horizon) {
         this.repo = repo;
+        this.lagProbe = lagProbe;
         this.overdueWindow = overdueWindow;
         this.horizon = horizon;
 
@@ -82,6 +101,12 @@ public class ReconciliationSweep {
         this.dlqDepth = MultiGauge.builder(DLQ_DEPTH_METRIC)
                 .description("Unreplayed dlq_record rows awaiting triage, by source topic")
                 .register(meterRegistry);
+        this.consumerLag = MultiGauge.builder(CONSUMER_LAG_METRIC)
+                .description("Records between the ingest group's committed offset and the log head")
+                .register(meterRegistry);
+        this.retentionHeadroom = MultiGauge.builder(RETENTION_HEADROOM_METRIC)
+                .description("Records between the log start and the ingest group's committed offset")
+                .register(meterRegistry);
     }
 
     /**
@@ -94,6 +119,32 @@ public class ReconciliationSweep {
         guard("overdue in-flight runs",
                 () -> overdueInflightRuns = repo.overdueInflightRuns(overdueWindow, horizon));
         guard("dlq depth", this::refreshDlqDepth);
+        guard("consumer lag", this::refreshConsumerLag);
+    }
+
+    /**
+     * Republishes both Kafka series sets from a single offsets poll, so lag and headroom are always read
+     * from the same broker snapshot and can never disagree about where the group is.
+     *
+     * <p>An empty probe — no {@link ConsumerLagProbe} bean ({@code ems.recon.kafka.enabled=false}), a group
+     * that has never committed, or a failed poll — clears both series rather than leaving them frozen.
+     * See the failure note on {@link ConsumerLagProbe}: unlike the SQL gauges above, a stale lag is worse
+     * than an absent one.
+     */
+    private void refreshConsumerLag() {
+        List<PartitionLag> partitions = lagProbe.map(ConsumerLagProbe::probe).orElseGet(List::of);
+        consumerLag.register(rows(partitions, PartitionLag::lag), true);
+        retentionHeadroom.register(rows(partitions, PartitionLag::retentionHeadroom), true);
+    }
+
+    private static List<MultiGauge.Row<?>> rows(List<PartitionLag> partitions,
+            ToLongFunction<PartitionLag> value) {
+        return partitions.stream()
+                .<MultiGauge.Row<?>>map(partition -> MultiGauge.Row.of(
+                        Tags.of(TOPIC_TAG, partition.topic(),
+                                PARTITION_TAG, Integer.toString(partition.partition())),
+                        value.applyAsLong(partition)))
+                .toList();
     }
 
     /**

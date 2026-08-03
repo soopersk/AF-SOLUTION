@@ -38,15 +38,14 @@ ON CONFLICT (property_key) DO UPDATE SET property_value = excluded.property_valu
 COMMIT;
 
 INSERT INTO post_filter_control_dag_map (team, filter_name, filter_condition, dag_id, enabled) VALUES
-( 'team', 'orchestration_control_dag_capital', 'cap_data_update.FRCA_CURATION', 'filter.condition', '$.additionalData.tenant:FRCA.msgTypeEventType:data-update,' ||
-'$.additionalData.tenant:FRCA.updateType:CURATION,$.context.date.run-category:TOPSIDE.*,'
-, 'dag_id', 'orchestration_control_dag_capital', 'enabled' TRUE),
-( 'team', 'CAPITAL', 'filter.name', 'cap_data_update.FRCA_CALC', 'filter.condition', '$.additionalData.tenant:FRCA.updateType:CALC_EVENT,$.additionalData.STATE:FINISH', 'dag_id', 'orchestration_control_dag_capital', 'enabled' TRUE),
-( 'team', 'CAPITAL', 'filter.name', 'cap_AQUA_CCR_ADJUSTED', 'filter.condition', '$.additionalData.tenant:AQUA_CCR,$.additionalData.batchType:INTRA-MONTH-ADJUSTED', 'dag_id', 'orchestration_control_dag_capital', 'enabled' TRUE),
-( 'team', 'CAPITAL', 'filter.name', 'cap_AQUA_CCR_UNADJUSTED', 'filter.condition', '$.additionalData.tenant:AQUA_CCR,$.additionalData.batchType:INTRA-MONTH-UNADJUSTED', 'dag_id', 'orchestration_control_dag_capital', 'enabled' TRUE),
-( 'team', 'CAPITAL', 'filter.name', 'cap_data_update.MER_batch', 'filter.condition', '$.source:MERYVAL,$.additionalData.TYPE:INGESTION,$.additionalData.RUN_TYPE:BATCH', 'dag_id', 'orchestration_control_dag_capital', 'enabled' TRUE),
-( 'team', 'CAPITAL', 'filter.name', 'cap_data_update.MER_intra', 'filter.condition', '$.source:MERYVAL,$.additionalData.TYPE:INGESTION,$.additionalData.RUN_TYPE:INTRA', 'dag_id', 'orchestration_control_dag_capital', 'enabled' TRUE),
-( 'team', 'CAPITAL', 'filter.name', 'cap_RWA', 'filter.condition', '$.source:RWA,$.additionalData.tenant:MR,$.additionalData.FREQUENCY:MONTHLY,$.additionalData.STATE:FINISH', 'dag_id', 'orchestration_control_dag_capital', 'enabled' TRUE),
-( 'team', 'CAPITAL', 'filter.name', 'cap_CVA', 'filter.condition', '$.source:CVA,$.additionalData.tenant:MR,$.additionalData.FREQUENCY:MONTHLY,$.additionalData.STATE:FINISH', 'dag_id', 'orchestration_control_dag_capital', 'enabled' TRUE),
-( 'team', 'NSFR', 'filter.name', 'nsfr_data-update', 'filter.condition', '$.additionalData.msgTypeEventType:data-update,$.additionalData.tenant:ACTL,$.additionalData.updateType:CURATION', 'dag_id', 'orchestration_control_dag_liquidity', 'enabled' FALSE)
+( 'CAPITAL', 'cap_data_update.FRCA_CURATION', '$.additionalData.tenant:FRCA.msgTypeEventType:data-update, $.additionalData.tenant:FRCA.updateType:CURATION,$.context.date.run-category:TOPSIDE.*'
+, 'orchestration_control_dag_capital', TRUE),
+( 'CAPITAL', 'cap_data_update.FRCA_CALC',  '$.additionalData.tenant:FRCA.updateType:CALC_EVENT,$.additionalData.STATE:FINISH', 'orchestration_control_dag_capital', TRUE),
+( 'CAPITAL', 'cap_AQUA_CCR_ADJUSTED', '$.additionalData.tenant:AQUA_CCR,$.additionalData.batchType:INTRA-MONTH-ADJUSTED', 'orchestration_control_dag_capital',      TRUE),
+( 'CAPITAL', 'cap_AQUA_CCR_UNADJUSTED', '$.additionalData.tenant:AQUA_CCR,$.additionalData.batchType:INTRA-MONTH-UNADJUSTED', 'orchestration_control_dag_capital',  TRUE),
+( 'CAPITAL', 'cap_data_update.MER_batch', '$.source:MERYVAL,$.additionalData.TYPE:INGESTION,$.additionalData.RUN_TYPE:BATCH', 'orchestration_control_dag_capital',  TRUE),
+( 'CAPITAL', 'cap_data_update.MER_intra', '$.source:MERYVAL,$.additionalData.TYPE:INGESTION,$.additionalData.RUN_TYPE:INTRA', 'orchestration_control_dag_capital',  TRUE),
+( 'CAPITAL', 'cap_RWA', '$.source:RWA,$.additionalData.tenant:MR,$.additionalData.FREQUENCY:MONTHLY,$.additionalData.STATE:FINISH', 'orchestration_control_dag_capital', TRUE),
+( 'CAPITAL', 'cap_CVA', '$.source:CVA,$.additionalData.tenant:MR,$.additionalData.FREQUENCY:MONTHLY,$.additionalData.STATE:FINISH', 'orchestration_control_dag_capital', TRUE),
+( 'NSFR', 'nsfr_data-update', '$.additionalData.msgTypeEventType:data-update,$.additionalData.tenant:ACTL,$.additionalData.updateType:CURATION', 'orchestration_control_dag_liquidity', FALSE)
 ON CONFLICT (team, filter_name) DO UPDATE SET filter_condition = EXCLUDED.filter_condition, dag_id = EXCLUDED.dag_id, enabled = EXCLUDED.enabled;

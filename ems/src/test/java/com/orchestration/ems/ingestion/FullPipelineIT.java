@@ -69,8 +69,8 @@ class FullPipelineIT extends AbstractPostgresIT {
 
     private static final String CONTROL_DAG = "orchestration_control_dag_capital";
     private static final String MERIVAL_BATCH_CEL =
-            "event.source == \"MERIVAL\" && event.additionalData.TYPE == \"INGESTION\" "
-                    + "&& event.additionalData.RUN_TYPE == \"BATCH\"";
+            "event.source == \"merival\" && event.additionaldata.type == \"ingestion\" "
+                    + "&& event.additionaldata.run_type == \"batch\"";
 
     /** A MERIVAL BATCH event: matches PERSIST + FORWARD; STATE lower-case to prove the upper() generated col. */
     private static final String MATCH_EVENT = """

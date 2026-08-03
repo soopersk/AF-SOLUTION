@@ -1,0 +1,83 @@
+{{- /*
+Every NON-SECRET setting the container needs, as environment variables. Secrets are absent by
+construction — they arrive as files written by the Vault agent (see deployment.yaml) and are read via
+SPRING_CONFIG_IMPORT. `deploy/helm/check.sh` greps the rendered manifests to prove nothing secret leaked
+in here.
+
+KEY SPELLING IS LOAD-BEARING. Spring Boot maps an environment variable to a property by lowercasing,
+turning `_` into `.`, and it matches a hyphenated property name only after hyphens are REMOVED. So
+`ems.edf.base-url` is `EMS_EDF_BASEURL` — NOT `EMS_EDF_BASE_URL`, which resolves to the different
+property `ems.edf.base.url`. The @Value path happens to tolerate the underscore form via a legacy
+fallback in the framework; @ConfigurationProperties (ems.auth) does not, so the whole file uses the one
+spelling that works for both. The pre-existing `KAFKA_BOOTSTRAP_SERVERS` in values.yaml `env:` bound to
+nothing at all and is superseded here.
+
+Keys are emitted only when a value is set. An empty string is not "unset" — it would override the
+in-code default with blank, which is how a pod ends up calling an empty URL.
+*/ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ems.fullname" . }}
+  labels:
+    {{- include "ems.labels" . | nindent 4 }}
+data:
+  # ---- Kafka ingest ----------------------------------------------------------------------------
+  {{- if .Values.consumer.enabled }}
+  SPRING_KAFKA_BOOTSTRAPSERVERS: {{ required "kafka.bootstrapServers must be set: unset silently falls back to the in-code localhost:9092 default and the pod consumes nothing" .Values.kafka.bootstrapServers | quote }}
+  EMS_CONSUMER_TOPICS: {{ required "consumer.topics must be set when consumer.enabled is true" .Values.consumer.topics | quote }}
+  {{- end }}
+  EMS_CONSUMER_ENABLED: {{ .Values.consumer.enabled | quote }}
+  EMS_CONSUMER_GROUPID: {{ .Values.consumer.groupId | quote }}
+  {{- with .Values.consumer.parkBackoffMs }}
+  EMS_CONSUMER_PARKBACKOFFMS: {{ . | quote }}
+  {{- end }}
+
+  # ---- EDF context enrichment ------------------------------------------------------------------
+  EMS_EDF_BASEURL: {{ required "edf.baseUrl must be set: unset silently falls back to http://localhost:8081" .Values.edf.baseUrl | quote }}
+  {{- with .Values.edf.contextPath }}
+  EMS_EDF_CONTEXTPATH: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.edf.maxAttempts }}
+  EMS_EDF_MAXATTEMPTS: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.edf.retryBackoff }}
+  EMS_EDF_RETRYBACKOFF: {{ . | quote }}
+  {{- end }}
+
+  # ---- Airflow trigger (outbox → REST) ---------------------------------------------------------
+  EMS_AIRFLOW_BASEURL: {{ required "airflow.baseUrl must be set: unset silently falls back to http://localhost:8082/api/v1" .Values.airflow.baseUrl | quote }}
+  {{- with .Values.airflow.triggerPath }}
+  EMS_AIRFLOW_TRIGGERPATH: {{ . | quote }}
+  {{- end }}
+  EMS_AIRFLOW_TRIGGERBACKOFF_INITIAL: {{ .Values.airflow.backoff.initial | quote }}
+  EMS_AIRFLOW_TRIGGERBACKOFF_MAX: {{ .Values.airflow.backoff.max | quote }}
+
+  # ---- Outbox dispatcher (the §11 toggle itself stays on the Deployment) ------------------------
+  EMS_DISPATCH_BATCHSIZE: {{ .Values.dispatch.batchSize | quote }}
+  EMS_DISPATCH_POLLINTERVALMS: {{ .Values.dispatch.pollIntervalMs | quote }}
+  EMS_DISPATCH_BASEBACKOFFSECONDS: {{ .Values.dispatch.baseBackoffSeconds | quote }}
+  EMS_DISPATCH_MAXBACKOFFSECONDS: {{ .Values.dispatch.maxBackoffSeconds | quote }}
+
+  # ---- Reconciliation sweep (§10 backstop gauges) ----------------------------------------------
+  # Deliberately ungated on consumer/dispatch: these must publish on a pod that is doing neither,
+  # which is exactly where things go quietly stuck.
+  EMS_RECON_ENABLED: {{ .Values.recon.enabled | quote }}
+  EMS_RECON_INTERVALMS: {{ .Values.recon.intervalMs | quote }}
+  EMS_RECON_OVERDUEWINDOW: {{ .Values.recon.overdueWindow | quote }}
+  EMS_RECON_HORIZON: {{ .Values.recon.horizon | quote }}
+  # Set recon.kafka.enabled=false AND alerts.expectConsumerLag=false together, or EmsLagProbeSilent
+  # fires forever against a probe that was switched off on purpose.
+  EMS_RECON_KAFKA_ENABLED: {{ .Values.recon.kafka.enabled | quote }}
+  EMS_RECON_KAFKA_TIMEOUTMS: {{ .Values.recon.kafka.timeoutMs | quote }}
+
+  # ---- Auth (§4.3). Group values are Entra group OBJECT IDs, not display names -----------------
+  EMS_AUTH_MODE: {{ .Values.auth.mode | quote }}
+  EMS_AUTH_GROUPSCLAIM: {{ .Values.auth.groupsClaim | quote }}
+  EMS_AUTH_PRINCIPALCLAIM: {{ .Values.auth.principalClaim | quote }}
+  EMS_AUTH_GROUPS_DISPATCHER: {{ required "auth.groups.dispatcher must be set" .Values.auth.groups.dispatcher | quote }}
+  EMS_AUTH_GROUPS_ADMIN: {{ required "auth.groups.admin must be set" .Values.auth.groups.admin | quote }}
+  EMS_AUTH_GROUPS_CI: {{ required "auth.groups.ci must be set" .Values.auth.groups.ci | quote }}
+  {{- if eq .Values.auth.mode "entra" }}
+  SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUERURI: {{ required "auth.issuerUri is mandatory when auth.mode=entra — startup fails fast without it" .Values.auth.issuerUri | quote }}
+  {{- end }}

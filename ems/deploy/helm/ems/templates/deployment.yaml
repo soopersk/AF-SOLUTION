@@ -20,12 +20,22 @@ spec:
     metadata:
       labels:
         {{- include "ems.selectorLabels" . | nindent 8 }}
-      {{- if .Values.vault.enabled }}
       annotations:
+        # Rolls the pods when non-secret wiring changes. Without this a `helm upgrade` that only edits
+        # the ConfigMap leaves every running pod on the old values, silently.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if .Values.vault.enabled }}
         vault.hashicorp.com/agent-inject: "true"
         vault.hashicorp.com/role: {{ .Values.vault.role | quote }}
-        # Secret templates (Airflow basic auth, Azure OAuth, EDF keys, JKS) added per env.
-      {{- end }}
+        {{- range .Values.vault.secrets }}
+        vault.hashicorp.com/agent-inject-secret-{{ .name }}: {{ .path | quote }}
+        # The template body is Vault's own Go template and lives in values.yaml on purpose: values files
+        # are not rendered by Helm, so its own delimiters survive intact instead of fighting the chart's.
+        # (A YAML comment is NOT a template comment — braces here would be evaluated.)
+        vault.hashicorp.com/agent-inject-template-{{ .name }}: |
+          {{- .template | nindent 10 }}
+        {{- end }}
+        {{- end }}
     spec:
       {{- if .Values.azure.workloadIdentity.enabled }}
       serviceAccountName: {{ include "ems.fullname" . }}
@@ -37,6 +47,11 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.service.port }}
+          # Bulk non-secret wiring. Container `env` below wins over `envFrom`, which is why the two
+          # cutover-critical settings stay here, visible on the workload rather than buried in a ConfigMap.
+          envFrom:
+            - configMapRef:
+                name: {{ include "ems.fullname" . }}
           env:
             - name: SPRING_PROFILES_ACTIVE
               value: {{ .Values.springProfile | quote }}
@@ -44,6 +59,13 @@ spec:
               value: {{ .Values.dispatch.enabled | quote }}
             - name: EMS_CONSUMER_ENABLED
               value: {{ .Values.consumer.enabled | quote }}
+            {{- if .Values.vault.enabled }}
+            # Secrets are FILES, never env vars: an env var is visible in `kubectl describe pod` and in
+            # every crash dump. Vault Agent renders them into /vault/secrets and Spring imports them as
+            # additional config; `optional:` means a pod still starts if a family is not provisioned.
+            - name: SPRING_CONFIG_IMPORT
+              value: {{ .Values.vault.configImport | quote }}
+            {{- end }}
             {{- range $k, $v := .Values.env }}
             - name: {{ $k }}
               value: {{ $v | quote }}

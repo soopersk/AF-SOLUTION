@@ -1,0 +1,341 @@
+{
+  "title": "EMS — Overview",
+  "uid": "ems-overview",
+  "tags": ["ems", "orchestration"],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "1m",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Prometheus",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Ingest",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Events consumed by outcome",
+      "description": "persisted / dropped / parked / poison. A rising `poison` line is the same signal EmsDlqDepthNonZero pages on, seen a few minutes earlier.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (rate(ems_events_consumed_total[5m]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Zero-match drops by source",
+      "description": "L0 admission drops. Compared against the same window yesterday by EmsDropRateAnomaly — this panel is where you confirm WHICH source moved.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 1 },
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (source) (rate(ems_events_dropped_total[5m]))",
+          "legendFormat": "{{source}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Context fetch by source",
+      "description": "cache / db / edf. A collapsing cache share is the leading indicator of EDF latency showing up in ingest.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (source) (rate(ems_context_fetch_total[5m]))",
+          "legendFormat": "{{source}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "row",
+      "title": "Routing",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Subscription verdicts by tenant and decision",
+      "description": "The routing signal. A tenant line falling to zero is what EmsSubscriptionVerdictsDrop warns on.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 10 },
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (tenant, decision) (rate(ems_subscription_verdicts_total[5m]))",
+          "legendFormat": "{{tenant}} / {{decision}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Registry versions live",
+      "description": "Steady state is exactly one series per component. Two means a partial registry render — routing_decision.registry_version then no longer identifies a single ruleset.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 10 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "value_and_name" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 2 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count by (component) (count by (component, version) (ems_registry_version))",
+          "legendFormat": "{{component}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Normalization mutations by field (1h)",
+      "description": "§4.4 requires this to be reviewed and approximately zero BEFORE cutover. Any bar here is a payload the Normalizer had to rewrite.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 10 },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 20, "drawStyle": "bars" } }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (field) (increase(ems_normalization_mutations_total[1h]))",
+          "legendFormat": "{{field}}"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "row",
+      "title": "Delivery",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Oldest pending outbox row",
+      "description": "Age of the oldest undispatched outbox row. The red line is the EmsOutboxBacklogStale page threshold (600s).",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 19 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "fillOpacity": 10, "thresholdsStyle": { "mode": "line" } },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 600 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(ems_outbox_pending_age_seconds)",
+          "legendFormat": "oldest pending"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "text",
+      "title": "Reading this row in shadow mode",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 19 },
+      "options": {
+        "mode": "markdown",
+        "content": "While `dispatch.enabled=false` (the §11 shadow stage), outbox rows are written in-transaction and **deliberately never drained**. The age gauge to the left therefore climbs without bound, and that is the system behaving exactly as designed — it is not a delivery failure.\n\nFor the same reason `EmsOutboxBacklogStale` is not rendered into the `PrometheusRule` at all until `dispatch.enabled=true`. The alert and this panel arm themselves at cutover, off the one toggle.\n\nThere is **no dispatch-outcome metric** in the ems-design §10 table, so no success/failure panel exists here yet; outbox drain health is read from this age gauge plus the Airflow side."
+      }
+    },
+    {
+      "id": 12,
+      "type": "row",
+      "title": "Failure",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 27 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "DLQ depth by topic",
+      "description": "Best-effort depth from the reconciliation sweep. Falls back to zero after a successful admin replay.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "fillOpacity": 10, "thresholdsStyle": { "mode": "line" } },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (topic) (ems_dlq_depth)",
+          "legendFormat": "{{topic}}"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Overdue in-flight runs",
+      "description": "STARTED with no terminal event past the reconciliation window. The loss backstop — independent of the Phase-D heartbeat, so it still fires when the heartbeat is what broke.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(ems_overdue_inflight_runs)",
+          "legendFormat": "overdue runs"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "row",
+      "title": "Kafka",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 36 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Consumer lag by partition",
+      "description": "Broker-side: end offset minus the ingest group's COMMITTED offset. Published even by a pod that consumes nothing. An EMPTY panel means the probe cannot reach the broker (EmsLagProbeSilent) — it does not mean zero lag.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 37 },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (topic, partition) (ems_consumer_lag)",
+          "legendFormat": "{{topic}}/{{partition}}"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Retention headroom by partition",
+      "description": "Committed offset minus the log start, in records — how much unread history retention has yet to reclaim. Falling toward zero is the early page: events are about to be deleted unread.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 37 },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "min by (topic, partition) (ems_consumer_retention_headroom_records)",
+          "legendFormat": "{{topic}}/{{partition}}"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "type": "row",
+      "title": "API",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 45 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "p95 latency by endpoint",
+      "description": "Fleet-wide, computed from buckets rather than from pod-local percentiles. The red line is the §12 budget (50ms).",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 46 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "fillOpacity": 10, "thresholdsStyle": { "mode": "line" } },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 0.05 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, uri) (rate(http_server_requests_seconds_bucket{uri=~\"/event|/run/status|/gate/groups\"}[10m])))",
+          "legendFormat": "{{uri}}"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "p99 latency by endpoint",
+      "description": "Only these three URIs publish buckets (MetricsConfig) — every other route keeps a plain count/sum timer and cannot be quantiled.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 46 },
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.99, sum by (le, uri) (rate(http_server_requests_seconds_bucket{uri=~\"/event|/run/status|/gate/groups\"}[10m])))",
+          "legendFormat": "{{uri}}"
+        }
+      ]
+    }
+  ]
+}

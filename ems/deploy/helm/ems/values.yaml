@@ -27,9 +27,66 @@ springProfile: shadow
 # not a rebuild. Must stay false until cutover.
 dispatch:
   enabled: false
+  # Drain tuning. Every pod drains concurrently; FOR UPDATE SKIP LOCKED makes that safe (§10).
+  batchSize: 100
+  pollIntervalMs: 5000
+  baseBackoffSeconds: 30
+  maxBackoffSeconds: 600
 
 consumer:
   enabled: true
+  # No default: an unset topic list is a pod that boots healthy and consumes nothing, which is the
+  # failure mode hardest to notice. The ConfigMap `required` refuses to render without it.
+  topics: ""
+  groupId: ems-ingest
+  parkBackoffMs: 30000
+
+kafka:
+  # Likewise required. The in-code fallback is localhost:9092 — fine for a dev JVM, silent death here.
+  bootstrapServers: ""
+
+edf:
+  baseUrl: ""            # required
+  contextPath: ""        # blank ⇒ keep the in-code default (/context/{id})
+  maxAttempts: ""        # blank ⇒ 3
+  retryBackoff: ""       # blank ⇒ 200ms
+
+airflow:
+  baseUrl: ""            # required
+  triggerPath: ""        # blank ⇒ /dags/{dagId}/dagRuns
+  backoff:
+    initial: 30s
+    max: 600s
+
+# Reconciliation sweep (§10). Ungated on consumer/dispatch by design — the backstop gauges must publish
+# from a pod doing neither, which is exactly where work goes quietly missing.
+recon:
+  enabled: true
+  intervalMs: 60000
+  overdueWindow: 6h
+  horizon: 7d
+  kafka:
+    # Turn OFF together with alerts.expectConsumerLag, never one without the other.
+    enabled: true
+    timeoutMs: 5000
+
+# §4.3 auth. `entra` everywhere shared; `local` self-issues HS256 tokens and belongs on a dev box only.
+auth:
+  mode: entra
+  groupsClaim: groups       # some tenants emit `roles`
+  principalClaim: sub
+  issuerUri: ""             # required when mode=entra; startup fails fast without it
+  # Entra group OBJECT IDs, not display names. Required — a blank id silently authorises nobody.
+  groups:
+    dispatcher: ""
+    admin: ""
+    ci: ""
+
+# Voluntary-disruption budget. The HPA floor is 3; keeping 2 up means a node drain cannot take ingest
+# capacity to one pod.
+pdb:
+  enabled: true
+  minAvailable: 2
 
 resources:
   requests:
@@ -50,21 +107,114 @@ probes:
   readiness:
     path: /actuator/health/readiness
 
-# Secrets are injected by Vault Agent (Airflow basic auth, Azure OAuth, JKS truststore,
-# EDF API keys) — never baked into the image or values (§10). Placeholder annotations:
+# Observability (A11: Prometheus PULL). The ServiceMonitor makes the §10 metrics reachable, the
+# PrometheusRule ships the §10 alert column, and the dashboard is loaded by the Grafana sidecar off
+# the labelled ConfigMap. All three are chart objects on purpose — an alert that lives in a wiki
+# drifts from the metric it watches; one that lives here cannot.
+metrics:
+  serviceMonitor:
+    enabled: true
+    path: /actuator/prometheus
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}          # e.g. release: kube-prometheus-stack, if the Operator selects on it
+  prometheusRule:
+    enabled: true
+    labels: {}
+  dashboard:
+    enabled: true
+    label: grafana_dashboard   # the sidecar's watch label
+
+# Alert thresholds that are JUDGEMENT CALLS rather than design statements.
+#
+# These five numbers are NOT derived from measurement — §14 item 10 (topic retention, partition count
+# and steady-state volume) is still unanswered, and the §12 perf harness has never been executed. They
+# are starting points to be tuned against the first week of shadow traffic, and they are values-file
+# inputs precisely so that tuning is a `helm upgrade`, not a code change.
+#
+# Thresholds NOT listed here (dlq > 0, outbox age > 600s, mutations > 0, registry versions > 1,
+# overdue runs > 0) are design statements from the §10 table and are literals in the template.
+alerts:
+  # Sustained records behind the head before paging (EmsConsumerLagSustained, for: 15m).
+  lagRecords: 100000
+  # Unread records still ahead of the log start before the early page (EmsRetentionHeadroomLow).
+  # Must be large enough that a responder has hours, not minutes, to act.
+  headroomRecords: 500000
+  # §12 budget for the three timed endpoints, in seconds (EmsEndpointP95Regression).
+  endpointP95Seconds: 0.05
+  # Multiple of yesterday's drop rate that counts as an anomaly (EmsDropRateAnomaly).
+  dropRatioFactor: 3
+  # Fraction of yesterday's verdict rate below which a tenant counts as having gone quiet
+  # (EmsSubscriptionVerdictsDrop).
+  volumeDropFactor: 0.5
+  # Whether this environment is expected to publish consumer-lag series at all. Set false where
+  # ems.recon.kafka.enabled is false (no reachable broker), otherwise EmsLagProbeSilent fires forever.
+  expectConsumerLag: true
+
+# Secrets are injected by Vault Agent as FILES — never baked into the image, never into values, and
+# never into an env var (env vars show up in `kubectl describe pod` and in crash dumps). §10 audited
+# four secret families in the legacy `system_properties`; three of them have a consumer in this
+# codebase and are rendered below.
+#
+# Each `template` is Vault Agent's OWN Go template. It lives here rather than in the chart template
+# because values files are not rendered by Helm, so its {{ }} reaches the annotation intact.
 vault:
   enabled: true
   role: ems
-  secretPath: secret/data/ems
+  # Spring reads the rendered files as additional config. `optional:` so a pod still starts when an
+  # environment has not provisioned a family — a missing EDF token surfaces as a 401 on the enrichment
+  # call, which is far easier to diagnose than a container that will not boot.
+  configImport: "optional:file:/vault/secrets/airflow.yaml,optional:file:/vault/secrets/edf.yaml,optional:file:/vault/secrets/kafka.yaml"
+  secrets:
+    # 1. Airflow basic auth — the outbox dispatcher's Authorization header.
+    - name: airflow.yaml
+      path: secret/data/ems/airflow
+      template: |
+        {{- with secret "secret/data/ems/airflow" -}}
+        ems:
+          airflow:
+            auth-header: "{{ .Data.data.authHeader }}"
+        {{- end }}
+    # 2. EDF API key — the context-enrichment bearer token.
+    - name: edf.yaml
+      path: secret/data/ems/edf
+      template: |
+        {{- with secret "secret/data/ems/edf" -}}
+        ems:
+          edf:
+            token: "{{ .Data.data.token }}"
+        {{- end }}
+    # 3. JKS truststore password for SASL_SSL Kafka. The store itself is family 3b below; these are
+    #    Spring Boot's own spring.kafka.ssl.* properties, so no code change is involved.
+    - name: kafka.yaml
+      path: secret/data/ems/kafka
+      template: |
+        {{- with secret "secret/data/ems/kafka" -}}
+        spring:
+          kafka:
+            ssl:
+              trust-store-location: "file:/vault/secrets/truststore.jks"
+              trust-store-password: "{{ .Data.data.truststorePassword }}"
+        {{- end }}
+    - name: truststore.jks
+      path: secret/data/ems/kafka
+      template: |
+        {{- with secret "secret/data/ems/kafka" -}}
+        {{ .Data.data.truststore | base64Decode }}
+        {{- end }}
+    # 4. Azure OAuth client secret — AUDITED IN THE LEGACY CONFIG BUT DELIBERATELY NOT RENDERED.
+    #    §10 chose Workload Identity (passwordless) for both Postgres and Entra, so no code path in
+    #    this service consumes a client secret. Left here as a documented absence rather than wired to
+    #    an invented property; enable only if an environment falls back to secret-based auth, and add
+    #    the consuming property at the same time.
+
+# Extra non-secret env passthrough. Empty on purpose — the wiring lives in the ConfigMap now, under the
+# key spelling Spring actually binds. (The old KAFKA_BOOTSTRAP_SERVERS / EMS_*_BASE_URL entries here
+# mapped to properties that do not exist; see the note at the top of templates/configmap.yaml.)
+env: {}
 
 # Azure passwordless PG (Workload Identity). Non-secret; the JDBC URL flips auth to Entra.
 azure:
   workloadIdentity:
     enabled: false
     clientId: ""
-
-# Non-secret env passed through to the container.
-env:
-  KAFKA_BOOTSTRAP_SERVERS: ""
-  EMS_AIRFLOW_BASE_URL: ""
-  EMS_EDF_BASE_URL: ""
