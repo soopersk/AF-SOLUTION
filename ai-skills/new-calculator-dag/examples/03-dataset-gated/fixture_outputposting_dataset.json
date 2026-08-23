@@ -1,0 +1,45 @@
+{
+  "event": {
+    "name": "M_MGDP_OUTPUTPOSTING_DATA_UPDATE",
+    "source": "MEGDP",
+    "key": "root,outputposting",
+    "eventTimestamp": "2026-07-27T16:02:11.075Z",
+    "publicationTimestamp": "2026-07-27T16:02:11.365Z",
+    "businessDate": "2026-07-27",
+    "logicalBusinessDate": "2026-07-24",
+    "additionalData": {
+      "DATASET_NAME": "OUTPUTPOSTING",
+      "megdpEventType": "data-update",
+      "updateType": "CURATION",
+      "datasetId": "9f3a1c88-2e54-4a1b-9d02-71b4c0e2a913",
+      "contextId": "17a1325e-071a-46d3-aa6d-479812f5ff53",
+      "triggerContextId": "17a1325e-071a-46d3-aa6d-479812f5ff53",
+      "tenant": "FRCA"
+    },
+    "contextId": "17a1325e-071a-46d3-aa6d-479812f5ff53",
+    "trackingId": "4c793b23-5951-4255-b93b-235951925507",
+    "id": "1b7d90aa-3f21-49c6-9c3e-5a0d7e6f4482"
+  },
+  "context": {
+    "id": "17a1325e-071a-46d3-aa6d-479812f5ff53",
+    "parentIds": [
+      "bfc62d19-92e0-4955-8a9b-6187da9f8f2b"
+    ],
+    "contracts": [],
+    "businessDate": "2026-07-27",
+    "source": "MEGDP",
+    "data": {
+      "runType": "BATCH",
+      "frequency": "M",
+      "calcType": "FLOORS",
+      "h3Region": "ZURI",
+      "region": "ZURI",
+      "reporting-date": "2026-07-24",
+      "run-category": "CORE",
+      "environment-name": "PROD",
+      "dag_id": "output_floor_monthly_dag",
+      "timestamp": "2026-07-27T16:01:03.221+0000",
+      "correlation_id": "0f987a74-1249-4a68-950b-d85c7b57a7f8"
+    }
+  }
+}

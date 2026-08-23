@@ -1,0 +1,56 @@
+TEMPLATE — enriched-event fixture (EnrichedEvent skeleton).
+DELETE EVERYTHING DOWN TO THE "---8<---" LINE; JSON HAS NO COMMENTS.
+
+Modelled on old-orchestration/dags/sample_MEG_STARTED_context_enriched_event.json.
+An enriched event is the raw EDF event merged with its resolved context — both
+halves matter: Tier-1 and the control DAG match on "event", your calculator reads
+run params from "context.data".
+
+Substitute:
+  {{source}}                   the publishing system, e.g. MERIVAL / MEGDP / AQUA_RISK_PLATFORM
+                               — must match the IDENT in a SOURCE.* registry condition
+  {{event_name}}               the EDF event name, e.g. D_MGDP_GLOBAL_TECH_START
+  {{business_date}}            ISO date, e.g. 2026-07-26
+  {{additional_data_fields}}   the fields the registered condition inspects (below)
+  {{context_data_fields}}      the run params CALC_INIT will read
+
+The condition type decides which "event.additionalData" fields MUST be present —
+the validator warns when they are missing (registry-rules.md, trigger_conditions.py):
+
+  SOURCE.*      "event.source"                     (already in the skeleton)
+  CALC.*        "type": "CALC_EVENT", "STATE": "FINISH"
+  DATASET.*     "DATASET_NAME": "...", "TYPE": "INGESTION"    (MERIVAL), or
+                "megdpEventType": "data-update", "updateType": "CURATION"  (MEGDP)
+  PIPELINEID.*  the pipeline identifier field
+
+Typical context.data run params: company-code-1, runType, frequency, calcType,
+h3Region, region, reporting-date, environment-name, enabledComponents, dag_id.
+Use REAL values from the interview — never invent company codes or component lists.
+---8<---
+{
+  "event": {
+    "name": "{{event_name}}",
+    "source": "{{source}}",
+    "eventTimestamp": "{{business_date}}T17:27:16.075Z",
+    "publicationTimestamp": "{{business_date}}T17:27:16.365Z",
+    "businessDate": "{{business_date}}",
+    "logicalBusinessDate": "{{business_date}}",
+    "additionalData": {
+      {{additional_data_fields}}
+    },
+    "contextId": "00000000-0000-0000-0000-000000000000",
+    "trackingId": "00000000-0000-0000-0000-000000000001",
+    "id": "00000000-0000-0000-0000-000000000002"
+  },
+  "context": {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "parentIds": [],
+    "contracts": [],
+    "businessDate": "{{business_date}}",
+    "publicationTimestamp": "{{business_date}}T17:22:34.849302Z",
+    "source": "{{source}}",
+    "data": {
+      {{context_data_fields}}
+    }
+  }
+}

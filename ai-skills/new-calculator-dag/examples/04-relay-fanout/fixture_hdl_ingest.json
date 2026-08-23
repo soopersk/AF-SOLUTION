@@ -1,0 +1,45 @@
+{
+  "event": {
+    "name": "D_LNF_HDL_INGEST_TASK_FINISH",
+    "source": "MEGDP",
+    "key": "root,lnfhdlingestcalc",
+    "eventTimestamp": "2026-07-27T09:14:02.764Z",
+    "publicationTimestamp": "2026-07-27T09:14:02.781Z",
+    "businessDate": "2026-07-27",
+    "logicalBusinessDate": "2026-07-24",
+    "additionalData": {
+      "APP": "LNF",
+      "FREQUENCY": "DAILY",
+      "STATE": "FINISH",
+      "type": "CALC_EVENT",
+      "tenant": "FRCA",
+      "SHORT_NAME": "TASK",
+      "trackingId": "HdL0009X21"
+    },
+    "contextId": "3c9a17e2-55b1-4c0e-9a71-2f8ed4b6c105",
+    "trackingId": "7d21f0b4-1c6e-4a93-8f0d-9b2c5e17a338",
+    "id": "aa41c3d7-9e02-4bb6-b7d5-1c0e83f9a2b4"
+  },
+  "context": {
+    "id": "3c9a17e2-55b1-4c0e-9a71-2f8ed4b6c105",
+    "parentIds": [
+      "6b2f9d10-77c4-4e88-9d3a-0af1c5b26e77"
+    ],
+    "contracts": [],
+    "businessDate": "2026-07-27",
+    "source": "MEGDP",
+    "data": {
+      "runType": "BATCH",
+      "frequency": "D",
+      "calcType": "HDL",
+      "h3Region": "ZURI",
+      "region": "ZURI",
+      "reporting-date": "2026-07-24",
+      "run-category": "CORE",
+      "environment-name": "PROD",
+      "dag_id": "hdl_process_dag",
+      "timestamp": "2026-07-27T09:13:41.053+0000",
+      "correlation_id": "5e8b1a30-6d4f-4c22-91ab-7f3d0c6e9142"
+    }
+  }
+}

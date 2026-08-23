@@ -1,0 +1,49 @@
+{
+  "event": {
+    "name": "M_CAPI_FLOORS_TASK_FINISH",
+    "source": "MEGDP",
+    "key": "root,floorscalc",
+    "eventTimestamp": "2026-07-27T15:28:21.764Z",
+    "publicationTimestamp": "2026-07-27T15:28:21.781Z",
+    "businessDate": "2026-07-27",
+    "logicalBusinessDate": "2026-07-24",
+    "additionalData": {
+      "APP": "CAPI",
+      "FREQUENCY": "MONTHLY",
+      "STATE": "FINISH",
+      "type": "CALC_EVENT",
+      "tenant": "FRCA",
+      "SHORT_NAME": "TASK",
+      "REGION": "SWITZERLAND",
+      "trackingId": "IvsX000L88"
+    },
+    "contextId": "17a1325e-071a-46d3-aa6d-479812f5ff53",
+    "trackingId": "4c793b23-5951-4255-b93b-235951925507",
+    "id": "e2616ed2-4483-428f-a16e-d24483f28fbc"
+  },
+  "context": {
+    "id": "17a1325e-071a-46d3-aa6d-479812f5ff53",
+    "parentIds": [
+      "bfc62d19-92e0-4955-8a9b-6187da9f8f2b"
+    ],
+    "contracts": [],
+    "businessDate": "2026-07-27",
+    "source": "MEGDP",
+    "data": {
+      "runType": "BATCH",
+      "frequency": "M",
+      "calcType": "FLOORS",
+      "h3Region": "ZURI",
+      "region": "ZURI",
+      "companyCodes": [
+        "3042"
+      ],
+      "reporting-date": "2026-07-24",
+      "run-category": "CORE",
+      "environment-name": "PROD",
+      "dag_id": "output_floor_monthly_dag",
+      "timestamp": "2026-07-27T14:51:57.053+0000",
+      "correlation_id": "0f987a74-1249-4a68-950b-d85c7b57a7f8"
+    }
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "usrg_ihc_dag": "SOURCE.MERIVAL.USRG",
+  "amer_b3f_dag": "SOURCE.MERIVAL.AMER",
+  "asia_d_b3f_dag": "SOURCE.MERIVAL.ASIA",
+  "aunz_d_b3f_dag": "SOURCE.MERIVAL.AUNZ",
+  "euro_d_b3f_dag": "SOURCE.MERIVAL.EURO",
+  "ldnl_d_b3f_dag": "SOURCE.MERIVAL.LDNL",
+  "wmap_d_b3f_dag": "SOURCE.MERIVAL.WMAP",
+  "wmch_d_b3f_dag": "SOURCE.MERIVAL.WMCH",
+  "wmde_d_b3f_dag": "SOURCE.MERIVAL.WMDE",
+  "wmus_d_b3f_dag": "SOURCE.MERIVAL.WMUS",
+  "zuri_d_b3f_dag": "SOURCE.MERIVAL.ZURI",
+  "portfolio_daily_dag": [
+    "CALC.CAPITALCALC",
+    "CALC.CAPITALCALCSMALL",
+    "CALC.CAPITALCALCEXTRASMALL",
+    "CALC.CAPITALCALCMEDIUM"
+  ],
+  "portfolio_monthly_dag": [
+    "CALC.CAPITALCALC",
+    "CALC.CAPITALCALCSMALL",
+    "CALC.CAPITALCALCEXTRASMALL",
+    "CALC.CAPITALCALCMEDIUM"
+  ],
+  "portfolio_fed_daily_dag": [
+    "CALC.CAPITALFEDCALC",
+    "CALC.CAPITALFEDCALCMEDIUM",
+    "CALC.CAPITALFEDCALCSMALL"
+  ],
+  "consenrichment_daily_dag": "CALC.GRPORTFOLIOCALC",
+  "consenrichment_monthly_dag": "CALC.GRPORTFOLIOCALC",
+  "validations_monthly_dag": "CALC.GRPORTFOLIOCALC",
+  "sectoral_floor_monthly_dag": "CALC.CONSENRICHMENTCALC",
+  "output_floor_monthly_dag": [
+    "CALC.FLOORSCALC",
+    "DATASET.OUTPUTPOSTING"
+  ],
+  "lrd_sft_daily_dag": "CALC.CONSENRICHMENTCALC",
+  "lrd_sft_quarterly_report_dag": "CALC.CONSENRICHMENTCALC",
+  "modelledexposure_dag": "SOURCE.AQUA_RISK_PLATFORM",
+  "gemini_daily_dag": "CALC.MODELLEDEXPOSURECALC",
+  "marketriskrwa_monthly_dag": "SOURCE.RWA"
+}

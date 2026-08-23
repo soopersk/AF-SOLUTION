@@ -1,0 +1,50 @@
+{
+  "event": {
+    "name": "D_MERIVAL_AMER_INGESTION_FINISH",
+    "source": "MERIVAL",
+    "eventTimestamp": "2026-07-26T17:27:16.075Z",
+    "publicationTimestamp": "2026-07-26T17:27:16.365Z",
+    "businessDate": "2026-07-26",
+    "logicalBusinessDate": "2026-07-26",
+    "additionalData": {
+      "TYPE": "INGESTION",
+      "DATASET_NAME": "INTERIMCOLLATERAL",
+      "FREQUENCY": "DAILY",
+      "region": "AMER",
+      "contextId": "b1c80571-dfe7-46c6-aa83-f45f5bf09788",
+      "LBD": "2026-07-26"
+    },
+    "contextId": "b1c80571-dfe7-46c6-aa83-f45f5bf09788",
+    "trackingId": "4691a974-d575-40dc-91a9-74d575d0dcbc",
+    "id": "863359bb-aafa-43a6-b553-bbaafab3a683"
+  },
+  "context": {
+    "id": "b1c80571-dfe7-46c6-aa83-f45f5bf09788",
+    "parentIds": [
+      "279c9e65-a8a1-4eef-9600-535c8e008f8a"
+    ],
+    "contracts": [],
+    "businessDate": "2026-07-26",
+    "publicationTimestamp": "2026-07-26T17:22:34.849302Z",
+    "source": "MERIVAL",
+    "data": {
+      "runType": "INTRA",
+      "frequency": "D",
+      "calcType": "B3F",
+      "h3Region": "AMER",
+      "region": "AMER",
+      "companyCodes": [
+        "2074",
+        "3042",
+        "B615"
+      ],
+      "reporting-date": "2026-07-24",
+      "run-category": "CORE",
+      "environment-name": "PROD",
+      "dag_id": "amer_d_b3f_dag",
+      "timestamp": "2026-07-26T17:22:34.491+0000",
+      "run_id": "manual__2026-07-26T17:22:03.407328+0000",
+      "correlation_id": "0f987a74-1249-4a68-950b-d85c7b57a7f8"
+    }
+  }
+}
