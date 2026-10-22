@@ -6,7 +6,7 @@ GitLab delivery backlog • 7 epics • 37 issues • Revised 22 October 2026
 
 Roll out in this order: **QA → DEV → UAT → PROD**. QA is a new environment for technical feasibility, the migration POC and the blue/green swimlane design. Build a working Airflow 2.10.5 blue lane there first, then a second Airflow 2.10.5 green lane, and upgrade only green to **Airflow 3.2.2**. Promote the proven configuration and procedure through DEV, UAT and PROD, with an exit gate for each environment.
 
-The lanes use the **same AKS nodepool, different namespaces, the same PostgreSQL server with different databases, the same Azure file share with separate lane directories, and separate Redis instances**. In QA, provision the first PostgreSQL server, Azure file share/PV/PVC and blue Redis before installing blue. Green reuses that server, nodepool and file share; it needs its own namespace, Helm release, database/roles, Redis, service accounts/federation, secret references and volume bindings. Reuse existing registry, Nexus, Key Vault, network and identity services where applicable.
+The lanes use the **same AKS nodepool, different namespaces, the same PostgreSQL server with different databases, and separate Redis instances**. Azure Files is an implementation choice in **QA-08**: **option-1** reuses one file share with separate lane directories; **option-2** uses separate blue/green file shares in the existing storage account. Neither option is selected yet. In QA, provision the first PostgreSQL server, blue Azure file share/PV/PVC and blue Redis before installing blue. Green reuses the server and nodepool, then uses the selected storage option; it needs its own namespace, Helm release, database/roles, Redis, service accounts/federation, secret references and volume bindings. Reuse existing registry, Nexus, Key Vault, network and identity services where applicable.
 
 The reviewed sources are [the migration PDF](<Airflow 2.10.5 to 3.3.2 Migration Plan (Blue Green on AKS).pdf>), especially sections 2–3, 6–12 and appendix A, and [AF_B_G.md](AF_B_G.md), which describes the same original design. This backlog records the user's revised implementation requirements; the source documents retain their original content. The architecture review and differences below take precedence for this backlog. Deployment configuration has not been inspected in a live Azure/AKS environment.
 
@@ -24,13 +24,13 @@ Airflow's upgrade guide permits starting from 2.7 or later and recommends the la
 | Compute | Dedicated green nodepool | Reuse blue's nodepool; size for overlap, shared failure impact and rollback capacity | QA-01, MIG-03, MIG-20 |
 | PostgreSQL | Clone, optionally on a separate server | Same server, separate blue/green databases and roles; green migration/result backend must never target blue | QA-07, MIG-10, MIG-15–16 |
 | Redis | Separate broker | Two instances in QA: first for blue, new second for green; green queue must be empty before the major-version upgrade | QA-01, QA-07, QA-09 |
-| Azure Files | Separate shares | Same physical share; separate DAG release roots and writable log paths; separate PV/PVC bindings per namespace | QA-08, MIG-08, MIG-10 |
+| Azure Files | Separate shares | Choose option-1: one share with lane directories, or option-2: separate shares in the same account; separate PV/PVC bindings per namespace in both | QA-08, MIG-08, MIG-10 |
 | Identity | Mostly existing secrets; federation discussed for later Blob logging | Namespace-specific federated credentials and service-account setup are required now for green's existing Azure access | QA-03, MIG-11 |
-| Delivery | Nexus delivery to two shares | Azure DevOps (ADO) pipeline targets environment and lane; deploy Nexus artifacts to lane directories on one share | QA-04–06, MIG-08 |
+| Delivery | Nexus delivery to two shares | Azure DevOps (ADO) targets environment/lane and resolves its share plus directories from the QA-08 decision | QA-04–06, MIG-08 |
 | Installation safety | No explicit second-install guard | Detect existing releases/workloads, fail unexpected duplicates, allow only the registered two-lane migration pair, prevent dual business activation | QA-06 |
-| Rollback and retirement | Retain/delete dedicated v2 resources | Retain blue database, Redis, DAG release and logs; shared nodepool/server/share stay in service when blue is retired | MIG-18, MIG-24, MIG-27 |
+| Rollback and retirement | Retain/delete dedicated v2 resources | Retain blue fallback artifacts; preserve shared infrastructure. Under option-1 retain the shared share; under option-2 retire only blue's share after retention | MIG-18, MIG-24, MIG-27 |
 
-**Isolation has limits.** Sharing a nodepool, database server and file share creates common capacity and failure risks. Separate namespaces, databases and directories provide operational separation; directories on a share mounted with common credentials are not a security boundary. QA must prove safe deployment and selective recovery; UAT must prove capacity and workload recovery. Do not claim a physically independent green stack or an untouched shared filesystem.
+**Isolation has limits.** Both options share the nodepool, database server and storage account; option-1 also shares the physical file share. Namespaces, databases and directories provide operational separation; common storage-account credentials do not provide lane-level authorization. QA must prove the selected design's safe deployment/recovery and UAT must prove capacity and workload recovery. Separate shares on the same account do not make green physically independent of blue's storage account.
 
 ### Architecture within each environment
 
@@ -44,7 +44,7 @@ Names below are examples; inventory the real existing blue identifiers in DEV/UA
 | Metadata database | e.g. `airflow_qa_blue` | e.g. `airflow_qa_green` | Same PostgreSQL server, separate DB roles/ownership and runtime grants |
 | Celery result backend | Blue database | Green database | Match lane database even if a runtime uses PgBouncer |
 | Celery broker | QA blue Redis | New QA green Redis | Separate service instance, endpoint and credentials; not Redis logical DB numbers on one instance |
-| Azure file share | One environment share | Same share | Preserve existing blue paths in later environments |
+| Azure file share | Existing environment blue share | Same share (option-1) or a new green share in the same account (option-2) | Choose in QA-08; preserve existing blue paths |
 | DAGs | e.g. `blue/dags/releases/<version>/` | e.g. `green/dags/releases/<version>/` | Runtime mounts read-only; independent selection of an immutable release |
 | Logs | e.g. `blue/logs/` | e.g. `green/logs/` | Writable only through intended lane mounts; historical access tested |
 | PV / PVC | Blue PV(s), PVC(s) in blue namespace | New PV(s), PVC(s) in green namespace pointing to the existing share | PV names and CSI volume handles unique; one claim per binding, `Retain` [S7, S9] |
@@ -72,7 +72,7 @@ flowchart LR
   B --> DBB
   G --> DBG
   DBB -. controlled clone .-> DBG
-  subgraph FILES[Same Azure file share]
+  subgraph FILES[Azure Files: option selected in QA-08]
     FB[Blue DAG and log paths]
     FG[Green DAG and log paths]
   end
@@ -89,7 +89,7 @@ flowchart LR
 | 3. POC / rehearsal | Supplies consistent source snapshot; no simultaneous execution of the same business work | Stop green v2; replace its disposable bootstrap DB with a fresh blue clone, then migrate and deploy 3.2.2 | Capture paused/run states and Fernet key reference; block copied production destinations; scheduling held throughout replacement/migration |
 | 4. Cutover | Pause/drain; stop scheduling, workers and triggerers; preserve DB, Redis and artifacts | Use a fresh cutover clone; validate, start paused, run harmless smoke, then become active | Confirm no blue execution remains; switch callers/ingress and restore only previously enabled DAGs in tiers |
 | 5. Rollback drill / fallback | Restart 2.10.5 paused; reconcile intervals before resuming | Stop all scheduling/execution; retain migrated DB and evidence | Switch caller/traffic settings back; export/reconcile work already performed by green |
-| 6. Accepted migration | Standby for agreed window, then retire lane-owned resources | Remains active at 3.2.2 | Keep shared nodepool, PostgreSQL server and file share |
+| 6. Accepted migration | Standby for agreed window, then retire lane-owned resources | Remains active at 3.2.2 | Keep shared nodepool/server/account and green storage; retire blue storage only as permitted by QA-08 |
 
 Only one lane processes an environment's business workload at a time, including scheduled, manual, API, backfill and event-triggered work. Both installations may be present for comparison. Any simultaneous POC execution must use explicitly disjoint sandbox data/destinations. Pausing DAGs or switching the hostname alone does not fence all execution; control workers, triggerers, callers, autoscalers and deployment reconciliation as well. Never point a 2.x process at a migrated 3.x database.
 
@@ -108,7 +108,7 @@ Only one lane processes an environment's business workload at a time, including 
 | --- | --- | --- |
 | M0 — Readiness agreed | Inventory, scope, owners and measurable release gates agreed | E1 |
 | MQ0 — QA blue ready | New QA infrastructure and first Airflow 2.10.5 installation pass baseline checks | E0: QA-01–02, QA-04–06 |
-| MQ1 — QA second v2 ready | Green 2.10.5 works on the same pool/server/share with a separate DB/Redis and verified federation/guard | E0: QA-03, QA-07–09 |
+| MQ1 — QA second v2 ready | Green 2.10.5 works on the same pool/server with the QA-08 storage option, separate DB/Redis and verified federation/guard | E0: QA-03, QA-07–09 |
 | MQ2 — QA POC and design accepted | Green upgraded to 3.2.2 on a clone; failure recovery, cutover and rollback proven; reusable swimlane design/runbook accepted | E0: QA-10; E2–E4 QA proof work |
 | M1 — DEV migration proven | MQ2 accepted; existing DEV blue retained, green installed at 2.10.5 then upgraded; DEV cutover and rollback pass | E4: MIG-17–18 repeated in DEV |
 | M2 — UAT accepted | Workflow, integration, security, load and recovery evidence accepted | E5 |
@@ -136,7 +136,7 @@ Pin chart/image versions before adapting snippets. Custom register/profile field
 | How does the new namespace authenticate to Azure? | QA-03 federation command and service-account manifest |
 | How do Helm and ADO select and serialize deployments? | QA-04 value layering; QA-05 pipeline YAML |
 | How does the active-lane guard behave and recover? | QA-06 state diagram, atomic reservation and failure cases |
-| How do two namespaces use one file share? | QA-08 layout, PV/PVC manifests and pod mounts |
+| Should lanes share one file share or use separate shares? | QA-08 option-1/option-2 comparison, diagrams, manifests and decision record |
 | How are green database and Redis targets isolated? | QA-07 database permissions and routing checks |
 | How are migration, smoke tests and rollback performed? | QA-09/10, MIG-14/15/16/18 and MIG-25 |
 
@@ -163,11 +163,11 @@ Capture the configuration and workload needed to migrate the existing service wi
 - [ ] Critical DAGs, external side effects and recovery constraints are identified for testing and rollback reconciliation.
 - [ ] Scope pins Airflow 3.2.2, confirms blue/initial-green Python 3.11 and records the target Python decision (planning default 3.13), with supported image/provider/platform prerequisites [S1].
 - [ ] An environment/lane resource register identifies cluster/pool, namespaces/releases, PostgreSQL server/databases/roles, Redis instances, Azure share/paths/PVs/PVCs, identities/federation subjects, hostnames and pipeline targets. Mark each resource create/reuse and its owner.
-- [ ] Existing DEV/UAT/PROD blue deployments and QA gaps are documented; the same-pool/server/share design and any environment-specific constraints are resolved before promotion.
+- [ ] Existing DEV/UAT/PROD blue deployments and QA gaps are documented; the same-pool/server design, QA-08 storage choice and any environment-specific constraints are resolved before promotion.
 
 **Implementation example — environment/lane register**
 
-Proposed `config/airflow/qa.yaml` (custom automation input, not Helm chart values). The guard and deployment generator consume the same reviewed file; operators select a lane rather than supply arbitrary database/namespace names.
+Proposed `config/airflow/qa.yaml` (custom automation input, not Helm chart values), illustrating option-1 until QA-08 records a selection. For option-2, resolve a separate share per lane as shown in QA-08. The guard and deployment generator consume the same reviewed file; operators select a lane rather than supply arbitrary database/namespace names.
 
 ```yaml
 schemaVersion: 1
@@ -261,7 +261,7 @@ Create the infrastructure missing from the new QA environment using reviewed inf
 | --- | --- | --- |
 | Nodepool | Reuse intended QA pool; add initial capacity if missing | Reuse same pool |
 | PostgreSQL | Create QA server and blue DB/roles | Reuse server; create green DB/roles |
-| Azure Files | Create one share and blue directories/PV/PVC | Reuse share; add green directories and PV/PVC |
+| Azure Files | Create blue share and blue directories/PV/PVC | QA-08 option-1: reuse share; option-2: create green share in same account; add green directories/PV/PVC in either case |
 | Redis | Create blue instance | Create separate green instance |
 | Namespace/release | Create blue | Create distinct green |
 | Azure identity | Configure QA access | Reuse suitable identity; add green federation subjects |
@@ -687,22 +687,38 @@ SELECT current_database(), current_user;
 
 The runtime metadata and Celery result-backend secrets must resolve to `airflow_qa_green`, not just have green-looking secret names. Likewise, resolve the broker to green's distinct Redis resource/endpoint. Record only sanitized host/database/role/resource IDs; do not print URLs containing passwords. Re-run the permission/routing checks after clone restore because copied grants can reintroduce source permissions.
 
-### QA-08 — Bind the same Azure file share safely in both namespaces
+### QA-08 — Choose and implement Azure Files storage: option-1 or option-2
 
 **Owner:** Platform engineer • **Depends on:** QA-02, QA-03 • **Milestone:** MQ1
 
-Reuse the physical QA share while keeping independent DAG deployment selection and writable log paths. A PVC is namespaced and a PV binds exclusively to one claim; create separate green bindings to the existing share [S9].
+Choose one of the two storage options during implementation, record the decision and implement/test the selected option. **option-1** uses a single physical share with lane directories. **option-2** uses separate blue/green shares within the existing storage account. Keep independent DAG selection and writable log paths in both. A PVC is namespaced and a PV binds exclusively to one claim, so both options require separate lane PV/PVC bindings [S9]. The examples below are alternatives; do not provision both layouts by default.
 
 **Acceptance criteria**
 
-- [ ] Static green PV(s) with unique names/CSI volume handles and green PVC(s) point to the existing share, with `ReadWriteMany`, explicit binding and `Retain`; no dynamic provisioning silently creates a second share [S7].
+- [ ] Record the selected `option-1` or `option-2`, rationale, actual share names/paths, capacity/cost assessment, backup/recovery design and owner before green storage deployment. Reflect it in IaC, the resource register, Helm/ADO values and the runbook.
+- [ ] Static green PV(s) with unique names/CSI volume handles and green PVC(s) use `ReadWriteMany`, explicit binding and `Retain`. Under option-1 both lanes point to the existing share; under option-2 explicitly provision/validate green's separate share in the existing account before binding. No unintended dynamic share is created [S7].
 - [ ] Create lane directories before using `subPath`; mount only the intended DAG/log directory into each component. DAGs are runtime-read-only, log roots do not overlap, and release jobs write only their selected lane paths.
-- [ ] SMB UID/GID/mount settings are tested with the actual images. Green initialization/cleanup performs no recursive ownership/delete operation over the share root or blue directories; subdirectories are operational separation, not proof of storage ACL isolation.
+- [ ] SMB UID/GID/mount settings are tested with the actual images. Green initialization/cleanup is restricted to its registered share/path and cannot modify blue; neither directory separation nor separate shares using a common account key are accepted as proof of authorization isolation.
 - [ ] Both namespaces mount successfully on the same node and on different nodes in the same pool, including restart/rescheduling; no CSI staging/handle collision, log overwrite or DAG publication cross-effect occurs.
-- [ ] Selective lane artifact/log recovery is demonstrated. A whole-share snapshot restore is not used for routine lane rollback because it could rewind the active lane.
-- [ ] Uninstall/delete tests on disposable bindings preserve the shared share and blue files; storage lifecycle is managed independently of lane Helm releases.
+- [ ] Prove lane-only artifact/log recovery: option-1 restores selected files/directories without rewinding the active lane; option-2 restores the intended lane share/files while preserving the other share. Snapshots/backups and historical-log access match the selected retention design.
+- [ ] Uninstall/delete tests on disposable bindings preserve retained blue files and green operation. Storage lifecycle stays outside lane Helm uninstall; under option-1 never delete the shared share, and under option-2 delete only an explicitly retired lane share after approval/retention.
+- [ ] Before MQ2, accept the selected production-intended pattern and record its promotion through DEV/UAT/PROD. If QA initially uses one option for feasibility but another is selected for later environments, repeat the affected QA mount, deployment, guard, recovery and retirement tests before promotion.
 
-**Implementation example — one share, separate directories and bindings**
+**Choice comparison — no option selected yet**
+
+| Consideration | option-1 — one share, separate lane directories | option-2 — separate shares, same storage account |
+| --- | --- | --- |
+| Provisioning | Reuse blue share; add green directories/bindings | Create a green share; retain the existing blue share/bindings |
+| Deployment safety | Validate the lane subpath on every publication/cleanup; a root-level mistake can affect both | A job mounting only green's share cannot traverse blue through that mount; broader account credentials can still reach both |
+| Recovery/retention | Share-level snapshots include both lanes; recover selected files/directories | Snapshot/backup/retention can follow each lane's share independently |
+| Performance/capacity | Both lanes share one share budget; directories do not reserve IOPS/capacity | Separate share sizing/limits where supported; account limits still apply |
+| Cost | Can avoid a second share's minimum provisioned allocation | May incur another minimum allocation/performance budget and protection costs; measure the actual billing model |
+| Retirement | Remove only retained/approved blue directories/bindings | Retire blue's share after its fallback and retention periods |
+| Common dependencies | Shared account and physical share | Shared account; separate shares do not isolate account-wide failure, networking or key access |
+
+Azure snapshots are share-scoped but allow individual-file recovery ([snapshot documentation](https://learn.microsoft.com/en-us/azure/storage/files/storage-snapshots-files)). Both options retain storage-account limits ([scale targets](https://learn.microsoft.com/en-us/azure/storage/files/storage-files-scale-targets)). Cost depends on the billing/tier/provisioning model, not merely the number of shares ([billing guidance](https://learn.microsoft.com/en-us/azure/storage/files/understanding-billing)). Keep SMB, the existing CSI driver and the current storage tier/billing model unless the implementation decision explicitly requires otherwise; separate storage accounts are outside these two options.
+
+**option-1 — one share, separate directories and bindings**
 
 ```text
 Azure share: airflow-qa
@@ -728,7 +744,7 @@ flowchart LR
   GV --> GD
 ```
 
-Example green static PV/PVC for an existing SMB share [S7, S9]. Substitute actual resource/account names and a unique CSI handle compatible with the deployed driver. Provision the referenced mount Secret using the existing approved mechanism; it contains no values in this example. Workload federation from QA-03 does not automatically replace SMB mount authentication.
+Example green static PV/PVC for option-1's existing SMB share [S7, S9]. Option-2 reuses this binding structure with the different share target shown below. Substitute actual resource/account names and a unique CSI handle compatible with the deployed driver. Provision the referenced mount Secret using the existing approved mechanism; it contains no values in this example. Workload federation from QA-03 does not automatically replace SMB mount authentication.
 
 ```yaml
 apiVersion: v1
@@ -740,7 +756,7 @@ spec:
     storage: 20Gi             # Example binding size, not a lane storage quota
   accessModes: [ReadWriteMany]
   persistentVolumeReclaimPolicy: Retain
-  storageClassName: ""       # Static binding; no dynamic second share
+  storageClassName: ""       # Static binding; share is managed explicitly in IaC
   claimRef:
     namespace: airflow-qa-green
     name: airflow-files-green
@@ -802,11 +818,97 @@ Pre-create only the intended directories through a controlled storage-bootstrap/
 
 Example isolation test: create a harmless marker under `/opt/airflow/logs/` in green; verify it lands only in `green/logs`, and blue DAG/log checksums remain unchanged. Repeat with pods on the same node and different nodes. Test deletion on disposable bindings; retain the physical share and both lanes' data. A storage account key can allow access beyond these subdirectories, so this mount layout is operational separation, not an Azure authorization boundary.
 
+**option-2 — separate blue/green shares in the existing storage account**
+
+Retain blue's existing share and create only the additional green share through IaC. This example deliberately keeps the same lane directory prefixes as option-1, so the Helm subpaths, pod paths and release receipts remain compatible; the registered share is what changes.
+
+```text
+Existing QA storage account
+├── share: airflow-qa                 # Existing blue share, retained
+│   └── blue/
+│       ├── dags/releases/poc-001/
+│       └── logs/
+└── share: airflow-qa-green           # New green share
+    └── green/
+        ├── dags/releases/poc-001/
+        └── logs/
+```
+
+```mermaid
+flowchart LR
+  BP[Blue pods] --> BC[Blue namespace PVC]
+  GP[Green pods] --> GC[Green namespace PVC]
+  BC --> BV[Blue PV]
+  GC --> GV[Green PV]
+  subgraph ACCOUNT[Existing QA storage account]
+    BS[Blue share: airflow-qa]
+    GS[Green share: airflow-qa-green]
+  end
+  BV --> BS
+  GV --> GS
+```
+
+Use the option-1 PV/PVC structure and green pod mounts, changing green's CSI target to the new share. Blue keeps its existing target. The following is a **replacement fragment for the green PV's `spec.csi`**, not a second PV to apply alongside option-1:
+
+```yaml
+spec:
+  csi:
+    driver: file.csi.azure.com
+    volumeHandle: "<resource-group>#<storage-account>#airflow-qa-green#green"
+    volumeAttributes:
+      resourceGroup: "<resource-group>"
+      storageAccount: "<storage-account>"
+      shareName: airflow-qa-green
+      protocol: smb
+    nodeStageSecretRef:
+      name: azurefiles-mount
+      namespace: airflow-qa-green
+```
+
+Keep the green PV/PVC names, explicit binding, `Retain`, approved mount options, DAG read-only mount and log mount from the common example. The new share's capacity/performance/backup settings are provisioned in Azure/IaC; a PVC's requested size alone does not provision those resources. Reusing the same storage account does not normally require a second account-level private endpoint, but validate the actual endpoint/DNS/network configuration and the selected mount authentication [S7].
+
+Example resolved register storage mapping (custom automation input; choose the appropriate mapping rather than relying unconditionally on `shared.fileShare`):
+
+```yaml
+# option-1 alternative
+storage:
+  option: option-1
+  account: <qa-storage-account>
+  shares:
+    blue: airflow-qa
+    green: airflow-qa
+---
+# option-2 alternative
+storage:
+  option: option-2
+  account: <qa-storage-account>
+  shares:
+    blue: airflow-qa
+    green: airflow-qa-green
+```
+
+The guard checks that share targets match the selected option. Under option-1, different lane directories on the same share are required; under option-2, the registered blue/green shares must differ. In either case, check the resolved account/share/path and normalized directory roots, retain separate PV/PVC bindings, and publish only to the selected lane destination. Account-key reuse or a shared SPN with broad permissions does not establish security isolation.
+
+Option-2 verification: create/read a green log marker, verify it is on `airflow-qa-green`, recover a test green artifact from green's snapshot/backup, and confirm blue's share/checksums are unchanged. Test lane-only share retirement on disposable resources after retention checks. Never delete the common storage account or green share when retiring blue.
+
+**Implementation decision record — complete before provisioning green storage**
+
+| Field | Implementation value |
+| --- | --- |
+| Selected option | `TBD — option-1 or option-2` |
+| Owner / decision date / rationale | TBD |
+| Storage account and blue/green share names | TBD |
+| Lane DAG/log paths and PV/PVC/CSI handles | TBD |
+| Capacity/performance, billing impact and account headroom | TBD |
+| Backup, lane-only recovery, retention and retirement procedure | TBD |
+| IaC / register / ADO / Helm change references | TBD |
+| QA test evidence and DEV/UAT/PROD promotion plan | TBD |
+
 ### QA-09 — Deploy the second Airflow 2.10.5 installation in green
 
 **Owner:** Airflow engineer • **Depends on:** QA-03, QA-04, QA-05, QA-06, QA-07, QA-08 • **Milestone:** MQ1
 
-Deploy green at 2.10.5 first using the parameterized pipeline, same nodepool, new namespace, separate database/Redis and shared file share. This is a required intermediate deployment, not an empty v3 install.
+Deploy green at 2.10.5 first using the parameterized pipeline, same nodepool, new namespace, separate database/Redis and the storage option selected in QA-08. This is a required intermediate deployment, not an empty v3 install.
 
 **Acceptance criteria**
 
@@ -825,7 +927,7 @@ ADO request: `qa / green / install / expectedActiveLane=blue`. Resolve green-v2 
 | Airflow/Python | 2.10.5 / 3.11 | 2.10.5 / 3.11 |
 | Metadata/result backend | `airflow_qa_blue` | `airflow_qa_green` |
 | Redis | Blue resource/endpoint | Distinct green resource/endpoint |
-| Nodepool / physical share | QA registered pool/share | Same pool/share |
+| Nodepool / storage | QA registered pool and blue share | Same pool; shared share (option-1) or registered separate green share (option-2) |
 | DAG/log paths | Blue roots | Green roots |
 | Smoke run / imports | Recorded run; zero errors | Recorded run; zero errors |
 
@@ -1012,7 +1114,7 @@ Example rollback changes only green's selection back to `green/dags/releases/poc
 
 ## EPIC E3 — Prepare the Airflow 3 platform and integrations
 
-**Description:** Adapt the parameterized two-lane platform for Airflow 3 components, execution API communication, access control and operational visibility. Preserve lane separation while explicitly reusing the nodepool, PostgreSQL server and file share.
+**Description:** Adapt the parameterized two-lane platform for Airflow 3 components, execution API communication, access control and operational visibility. Preserve lane separation while reusing the nodepool/PostgreSQL server and implementing the QA-08 storage selection.
 
 **Completion criteria:** The target configuration deploys, runtime resources and credentials are correctly isolated, users/callers can integrate, and operators can observe and diagnose the service.
 
@@ -1057,7 +1159,7 @@ Define the resource validation used in QA and each later environment. QA-01/07/0
 
 - [ ] Every environment maps green to the same PostgreSQL server as blue but a different database/roles; metadata and result-backend routes, optional PgBouncer pools and direct migration access reach green only. Reapply/verify ACLs after each clone restore.
 - [ ] Each lane has its own Redis instance/credentials; no blue queue message can reach green workers and green queues are drained/empty before changing major version.
-- [ ] Each environment reuses its existing nodepool and file share; namespace-specific PV/PVC bindings and nonoverlapping DAG/log paths preserve existing blue files and selected release. Do not add a dedicated green share or nodepool by default.
+- [ ] Each environment reuses its existing nodepool and implements the QA-08 storage selection: option-1 reuses blue's share with distinct lane roots; option-2 provisions a green share in the existing account. Namespace-specific PV/PVC bindings and registered share/path targets preserve blue files and selected release. Do not add a separate green nodepool by default.
 - [ ] Shared nodepool, database server and share budgets support overlap, migration and restart capacity without breaching agreed limits; environment prerequisites and owners are recorded for DEV/UAT/PROD execution tickets. Rehearsal tasks cannot write to production business systems.
 
 ### MIG-11 — Configure secrets, execution API access and network controls
@@ -1230,7 +1332,7 @@ Use the accepted QA templates/runbook against existing DEV blue. Build DEV green
 **Acceptance criteria**
 
 - [ ] The pinned target image/configuration and selected DAG release deploy with healthy components and zero retained-DAG import errors.
-- [ ] QA exit is recorded before DEV migration. DEV green starts at 2.10.5 in a new namespace on DEV's same nodepool/server/share, with a separate database/Redis, namespace federation, lane PV/PVC paths and passing ADO guards; v2 parity evidence precedes its v3 upgrade.
+- [ ] QA exit is recorded before DEV migration. DEV green starts at 2.10.5 in a new namespace on DEV's same nodepool/server, using the QA-08 storage choice, a separate database/Redis, namespace federation, lane PV/PVC targets and passing ADO guards; v2 parity evidence precedes its v3 upgrade.
 - [ ] The runbook covers pause/drain, stop v2, capture state, clone/migrate, start v3 safely, smoke checks and controlled resume; timings and checkpoints are recorded.
 - [ ] Smoke tests and representative DAGs pass, including the first scheduled run, without duplicate external processing.
 - [ ] Abort-before-activation and rollback-after-execution drills from MIG-18 pass again in DEV with caller/ingress reversal, fencing and reconciliation; shared resource contents/capacity and blue restartability remain valid.
@@ -1248,7 +1350,7 @@ First in QA, deploy upgraded green with safe test targets, execute a controlled 
 - [ ] A drill exports v3 run outcomes and reconciles processed/missed intervals, side effects and configuration changes before affected v2 DAGs resume.
 - [ ] Critical test outputs have no unexplained duplicates or gaps; risky replays require a DAG-owner decision rather than blanket marking runs successful.
 - [ ] Another engineer completes the drill within the agreed service recovery target, with separate timing for business reconciliation and all runbook corrections captured.
-- [ ] Blue's database has not been schema-migrated; green queues/processes and automatic restarts are fenced before blue resumes. Restore only blue's selected DAG artifact/configuration, not the entire shared file share or server; preserve green evidence and historical-log access.
+- [ ] Blue's database has not been schema-migrated; green queues/processes and automatic restarts are fenced before blue resumes. Restore only intended blue artifacts/configuration; option-1 forbids rewinding the common share, while option-2 restricts any storage recovery to blue's share. Preserve green evidence/historical logs and never restore the shared server as routine rollback.
 - [ ] The service RTO measures restored UI/API/smoke service separately from full DAG/business recovery. Export green history/configuration/side effects for reconciliation; do not claim new green run history is merged back into blue or that external writes are undone.
 
 **Implementation example — reconciliation after green has executed work**
@@ -1276,7 +1378,7 @@ Export a receipt per decision with `dag_id`, `run_id`, logical date/interval, gr
 
 **Owner:** QA lead • **Depends on:** MIG-17, MIG-18 • **Environment:** UAT
 
-After DEV exit, repeat the registered second-2.10.5 setup on UAT's same pool/server/share, with a new namespace, separate database/Redis and working identity/pipeline/guard. Record v2 parity, then upgrade UAT green using a fresh clone of UAT blue and the tested procedure. Execute workflows against safe destinations on Airflow 3.2.2 and the QA-selected Python (planning default 3.13).
+After DEV exit, repeat the registered second-2.10.5 setup on UAT's same pool/server and the QA-08 storage choice, with a new namespace, separate database/Redis and working identity/pipeline/guard. Record v2 parity, then upgrade UAT green using a fresh clone of UAT blue and the tested procedure. Execute workflows against safe destinations on Airflow 3.2.2 and the QA-selected Python (planning default 3.13).
 
 **Acceptance criteria**
 
@@ -1345,7 +1447,7 @@ Run the corrected procedure with production-like workload/data and approve the e
 
 **Owner:** Platform engineer • **Depends on:** MIG-22 • **Milestone:** M3 • **Label:** `phase::validation`
 
-After UAT exit, prepare production green on the same pool/server/share as production blue. Deploy green at 2.10.5 in its new namespace with separate DB/Redis, prove safe setup parity, then rehearse the upgrade to 3.2.2 on a fresh production-sized clone without executing production business work.
+After UAT exit, prepare production green on the same pool/server as production blue with the accepted QA-08 storage choice. Deploy green at 2.10.5 in its new namespace with separate DB/Redis, prove safe setup parity, then rehearse the upgrade to 3.2.2 on a fresh production-sized clone without executing production business work.
 
 **Acceptance criteria**
 
@@ -1366,7 +1468,7 @@ Make the final release decision using a concise readiness checklist and the agre
 - [ ] Change approval, cutover window, staffing/deputies, critical DAG owners and stakeholder notifications are confirmed.
 - [ ] Backups and preserved v2 image/configuration/DAG release, database, broker, secrets and restart capacity are available for the full fallback period.
 - [ ] DNS/ingress, TLS/SSO and external caller switch/fallback settings are verified; release freeze rules and any needed TTL change are recorded.
-- [ ] The shared nodepool, database server and file share have capacity and remain protected for green operation and blue restart; lane-only restoration/cleanup is proven. Neither cutover nor fallback restores the whole shared server/share.
+- [ ] The shared nodepool/server/account and selected share layout have capacity and remain protected for green operation and blue restart; lane-only restoration/cleanup is proven. Neither cutover nor fallback rewinds the shared server or, under option-1, the common share.
 - [ ] The go/no-go decision confirms no blocking defect, current drill evidence, numeric triggers and a latest safe rollback decision time.
 
 ### MIG-25 — Execute production cutover and controlled DAG resume
@@ -1441,7 +1543,7 @@ Remove unused v2 infrastructure after acceptance while preserving required histo
 
 - [ ] Final v2 backup, DAG/configuration artifacts and historical-log access have an approved retention/access plan before resources are removed.
 - [ ] Retire only blue-owned releases/namespaces, database/roles, Redis instance, PV/PVC bindings, permitted lane directories, hostnames, federation entries and secret references after retention checks; retain anything green still uses, including the Fernet key/managed identity if reused.
-- [ ] Keep the shared AKS nodepool, PostgreSQL server, Azure file share/storage account and shared network/identity/registry services. Removing a blue PVC/PV or namespace cannot delete the physical share or green data; retained blue directories/backups have a deletion owner/date.
+- [ ] Keep the shared AKS nodepool, PostgreSQL server, storage account and shared network/identity/registry services. Under option-1 retain the common share and remove only approved blue directories; under option-2 explicitly retire blue's share only after retention while preserving green's share. Removing blue PVC/PV/namespace resources cannot implicitly delete a retained share or green data; retained blue artifacts/backups have a deletion owner/date.
 - [ ] CI and deployment target v3 only after fallback ends; obsolete credentials, access mappings and temporary rehearsal resources are removed as appropriate.
 - [ ] Operations documentation, actual costs and migration evidence are updated, with actionable lessons and remaining work recorded.
 
@@ -1452,11 +1554,11 @@ Remove unused v2 infrastructure after acceptance while preserving required histo
 | Helm release/namespace | Remove only the registered blue release/namespace after retention checks | Green release/namespace |
 | Database | Retain final backup; drop only approved blue DB/roles when retention ends | Shared PostgreSQL server and green DB/roles |
 | Redis | Retire blue instance after fallback ends | Green Redis |
-| PV/PVC | Remove approved blue bindings with `Retain` confirmed | Physical shared file share, green bindings/data |
-| Share directories | Retain/archive blue DAG/log roots, then remove only approved blue roots | Green roots and share/storage account |
+| PV/PVC | Remove approved blue bindings with `Retain` confirmed; no implicit Azure share deletion | Retained shares and green bindings/data |
+| Share directories / share | Option-1: remove approved blue roots only. Option-2: retire only blue's share after retention | Shared share (option-1), green share (option-2), and storage account in both |
 | Federation/secrets | Remove only unused blue subjects/references | Reused managed identity, Fernet key and green access |
 
-Example acceptance evidence: after uninstalling the retired blue release in a disposable QA drill, green still mounts its DAG/log paths, the smoke DAG succeeds, and its DB/Redis routes are unchanged. Deleting the PostgreSQL server, file share, storage account or nodepool is never part of routine blue-lane retirement.
+Example acceptance evidence: after uninstalling the retired blue release in a disposable QA drill, green still mounts its DAG/log paths, the smoke DAG succeeds, and its DB/Redis routes are unchanged. Never delete the PostgreSQL server, shared storage account or nodepool during routine blue retirement. A common share under option-1 must remain; only option-2's dedicated blue share may be deleted after its explicit retention/retirement checks.
 
 ---
 
@@ -1478,7 +1580,7 @@ These are implementation decisions with owners, not reasons to defer QA setup. R
 | Python, providers and image | Blue/initial-green 3.11; target planning default 3.13; prove constraints/dependencies and pin image/chart digests | Airflow engineer, MIG-01/06/07/09 |
 | Real resource identifiers and identity reuse | Environment/lane register replaces example names; add namespace-specific federation even when managed identity is reused | Platform engineer, MIG-01, QA-03/04 |
 | Same-server clone technique | Prove permissions, consistency, ownership/grants, recovery and timings; choose dump/restore or template copy from evidence | DBA, MIG-15/16 |
-| Shared SMB release/log layout | Preserve existing blue paths, choose green roots and test publish/selection, CSI mounts and selective restore | Platform/DevOps, QA-08, MIG-08 |
+| Azure Files option and SMB release/log layout | Select option-1 or option-2 in QA-08, preserve blue paths and test publication, CSI mounts, lane-only recovery and retirement | Platform/DevOps, QA-08, MIG-08 |
 | Guard/fencing implementation | Explicit registered pair plus serialized deployment/activation checks; define how autoscalers, jobs and callers are fenced | DevOps engineer, QA-05/06 |
 | Shared capacity and change window | QA feasibility evidence, DEV validation, UAT load proof and production-sized rehearsal; do not inherit fixed pool sizes/dates | Cloud/DBA/change owner, MIG-03/20/23/24 |
 
@@ -1486,7 +1588,7 @@ These are implementation decisions with owners, not reasons to defer QA setup. R
 
 - Retained MIG-01–27 and added E0/QA-01–10: 7 epics and 37 issues. The older `af-v3-gitlab-backlog.md` remains a historical sample, not the revised implementation backlog.
 - Changed the target from 3.3.2 to the requested 3.2.2; added the new QA environment and first-v2/second-v2/green-v3 gates ahead of DEV/UAT/PROD.
-- Replaced dedicated-green nodepool/share assumptions with explicit reuse, separate namespace bindings, lane directories and shared-failure/capacity checks (source sections 2–3, 6 and appendix A).
+- Replaced the dedicated-green nodepool assumption with reuse. QA-08 leaves storage open for implementation selection: option-1 shares one file share with lane directories; option-2 uses separate shares in the same account. Both retain separate namespace bindings and capacity/recovery checks (source sections 2–3, 6 and appendix A).
 - Added current-phase federation, ADO/Helm parameterization and tested installation/activation guards; the second installation must pass at 2.10.5 before the upgrade (source sections 5–6, revised by user requirements).
 - Preserved clone-only schema migration, backup/restore, paused startup, timed rollback and business reconciliation, with QA proof and environment-specific repetitions (source sections 7–12).
 - Corrected shared-resource retirement and retained NFS/Blob as deferred work (source sections 13–14). Kept Python 3.13 as an explicit source-plan assumption to confirm rather than the previous backlog's unsupported requirement to use 3.14.
