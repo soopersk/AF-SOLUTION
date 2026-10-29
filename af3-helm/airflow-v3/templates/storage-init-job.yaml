@@ -1,0 +1,50 @@
+{{- /*
+One-time share preparation (§6.6), as a post-install hook so it runs once, after the PVC exists.
+
+Runs as UID 50000 / GID 0, not root: on SMB ownership comes from the mount options, so the useful
+check is whether the Airflow user can create and write each directory. A failure here fails the
+install instead of the first task.
+*/ -}}
+{{- if .Values.storage.initJob.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-storage-init
+  labels:
+    {{- include "airflow-v3.labels" . | nindent 4 }}
+    component: storage-init
+  annotations:
+    helm.sh/hook: post-install
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        {{- include "airflow-v3.labels" . | nindent 8 }}
+        component: storage-init
+    spec:
+      restartPolicy: Never
+      {{- include "airflow-v3.podSpec" . | nindent 6 }}
+      containers:
+        - name: storage-init
+          image: {{ include "airflow-v3.image" . }}
+          imagePullPolicy: {{ .Values.airflow.images.airflow.pullPolicy }}
+          command: ["bash", "-euo", "pipefail", "-c"]
+          args:
+            - |
+              cd /share
+              for dir in dags logs plugins; do
+                mkdir -p "$dir"
+                probe="$dir/.write-probe-$HOSTNAME"
+                touch "$probe" && rm -f "$probe"
+              done
+              ls -lnd /share/dags /share/logs /share/plugins
+          volumeMounts:
+            - name: share
+              mountPath: /share
+      volumes:
+        - name: share
+          persistentVolumeClaim:
+            claimName: {{ .Values.storage.claimName }}
+{{- end }}

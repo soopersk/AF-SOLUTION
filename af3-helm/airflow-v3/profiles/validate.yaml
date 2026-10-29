@@ -1,0 +1,10 @@
+# §10.2 Phase D steps 2–3: api-server and dag-processor only. Check health, SSO login, the DAG
+# count and zero import errors before anything can execute a task.
+airflow:
+  scheduler:
+    replicas: 0
+  triggerer:
+    replicas: 0
+  workers:
+    celery:
+      replicas: 0

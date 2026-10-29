@@ -1,0 +1,269 @@
+a2wsgi==1.10.10           # via apache-airflow-core, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+adal==1.2.7               # via msrestazure, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+adlfs==2026.8.0           # via apache-airflow-providers-microsoft-azure, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+aiohappyeyeballs==2.7.1   # via aiohttp, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+aiohttp==3.14.3           # via apache-airflow-providers-databricks, apache-airflow-providers-http, apache-airflow-providers-microsoft-azure, azure-core, microsoft-kiota-authentication-azure, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt, -r requirements.af3.in
+aiosignal==1.4.0          # via aiohttp, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+aiosmtplib==5.1.3         # via apache-airflow-providers-smtp, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+aiosqlite==0.22.1         # via apache-airflow-core, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+alembic==1.20.0           # via apache-airflow-core, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+amqp==5.3.1               # via kombu, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+annotated-doc==0.0.5      # via fastapi, typer, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+annotated-types==0.8.0    # via pydantic, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+anyio==4.15.1             # via httpx, openai, starlette, watchfiles, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+apache-airflow==3.3.2     # via apache-airflow-providers-celery, apache-airflow-providers-common-compat, apache-airflow-providers-common-io, apache-airflow-providers-common-sql, apache-airflow-providers-databricks, apache-airflow-providers-fab, apache-airflow-providers-http, apache-airflow-providers-microsoft-azure, apache-airflow-providers-postgres, apache-airflow-providers-smtp, apache-airflow-providers-standard, -r requirements.af3.in
+apache-airflow-core==3.3.2  # via apache-airflow, apache-airflow-task-sdk
+apache-airflow-providers-celery==3.24.0  # via -c ../vendor/constraints/constraints-3.3.2-python3.14.txt, -r requirements.af3.in
+apache-airflow-providers-common-compat==1.19.0  # via apache-airflow-core, apache-airflow-providers-celery, apache-airflow-providers-common-io, apache-airflow-providers-common-sql, apache-airflow-providers-databricks, apache-airflow-providers-fab, apache-airflow-providers-http, apache-airflow-providers-microsoft-azure, apache-airflow-providers-postgres, apache-airflow-providers-smtp, apache-airflow-providers-standard, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+apache-airflow-providers-common-io==1.9.0  # via apache-airflow-core, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+apache-airflow-providers-common-sql==2.1.1  # via apache-airflow-core, apache-airflow-providers-databricks, apache-airflow-providers-postgres, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+apache-airflow-providers-databricks==7.20.0  # via -c ../vendor/constraints/constraints-3.3.2-python3.14.txt, -r requirements.af3.in
+apache-airflow-providers-fab==3.9.0  # via -c ../vendor/constraints/constraints-3.3.2-python3.14.txt, -r requirements.af3.in
+apache-airflow-providers-http==6.1.0  # via -c ../vendor/constraints/constraints-3.3.2-python3.14.txt, -r requirements.af3.in
+apache-airflow-providers-microsoft-azure==15.1.0  # via -c ../vendor/constraints/constraints-3.3.2-python3.14.txt, -r requirements.af3.in
+apache-airflow-providers-postgres==7.0.2  # via -c ../vendor/constraints/constraints-3.3.2-python3.14.txt, -r requirements.af3.in
+apache-airflow-providers-smtp==3.0.4  # via apache-airflow-core, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt, -r requirements.af3.in
+apache-airflow-providers-standard==1.19.0  # via apache-airflow-core, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt, -r requirements.af3.in
+apache-airflow-task-sdk==1.3.2  # via apache-airflow, apache-airflow-core
+apispec==6.10.0           # via flask-appbuilder, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+argcomplete==3.7.2        # via apache-airflow-core, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+arrow==1.4.0              # via isoduration, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+asgiref==3.12.1           # via apache-airflow-core, apache-airflow-providers-common-compat, apache-airflow-providers-http, apache-airflow-task-sdk, opentelemetry-instrumentation-asgi, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt, -r requirements.af3.in
+asyncpg==0.31.0           # via apache-airflow-providers-postgres, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+attrs==26.1.0             # via aiohttp, apache-airflow-core, apache-airflow-task-sdk, jsonschema, outcome, referencing, svcs, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+authlib==1.8.0            # via msgraphfs, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+azure-ai-projects==2.4.0  # via apache-airflow-providers-microsoft-azure, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+azure-batch==15.1.0       # via apache-airflow-providers-microsoft-azure, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+azure-common==1.1.28      # via azure-mgmt-containerinstance, azure-mgmt-datalake-store, azure-synapse-artifacts, azure-synapse-spark, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+azure-core==1.41.0        # via adlfs, azure-ai-projects, azure-batch, azure-core-tracing-opentelemetry, azure-cosmos, azure-identity, azure-keyvault-secrets, azure-kusto-data, azure-mgmt-core, azure-monitor-opentelemetry, azure-monitor-opentelemetry-exporter, azure-servicebus, azure-storage-blob, azure-storage-file-datalake, azure-storage-file-share, azure-synapse-spark, microsoft-kiota-authentication-azure, msrest, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt, -r requirements.af3.in
+azure-core-tracing-opentelemetry==1.0.0b13  # via azure-monitor-opentelemetry
+azure-cosmos==4.17.0      # via apache-airflow-providers-microsoft-azure, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+azure-datalake-store==0.0.53  # via apache-airflow-providers-microsoft-azure, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+azure-identity==1.25.3    # via adlfs, apache-airflow-providers-microsoft-azure, azure-ai-projects, azure-kusto-data, azure-monitor-opentelemetry-exporter, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt, -r requirements.af3.in
+azure-keyvault-secrets==4.11.2  # via apache-airflow-providers-microsoft-azure, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt, -r requirements.af3.in
+azure-kusto-data==6.0.4   # via apache-airflow-providers-microsoft-azure, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+azure-mgmt-compute==38.3.0  # via apache-airflow-providers-microsoft-azure, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+azure-mgmt-containerinstance==10.1.0  # via apache-airflow-providers-microsoft-azure, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+azure-mgmt-containerregistry==15.0.0  # via apache-airflow-providers-microsoft-azure, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+azure-mgmt-core==1.6.0    # via azure-mgmt-compute, azure-mgmt-containerinstance, azure-mgmt-containerregistry, azure-mgmt-cosmosdb, azure-mgmt-datafactory, azure-mgmt-resource, azure-mgmt-storage, azure-synapse-artifacts, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+azure-mgmt-cosmosdb==10.0.0  # via apache-airflow-providers-microsoft-azure, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+azure-mgmt-datafactory==10.0.0  # via apache-airflow-providers-microsoft-azure, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+azure-mgmt-datalake-nspkg==3.0.1  # via azure-mgmt-datalake-store, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+azure-mgmt-datalake-store==0.5.0  # via apache-airflow-providers-microsoft-azure, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+azure-mgmt-nspkg==3.0.2   # via azure-mgmt-datalake-nspkg, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+azure-mgmt-resource==26.0.0  # via apache-airflow-providers-microsoft-azure, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+azure-mgmt-storage==25.1.0  # via apache-airflow-providers-microsoft-azure, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+azure-monitor-opentelemetry==1.8.10  # via -r requirements.af3.in
+azure-monitor-opentelemetry-exporter==1.0.0b57  # via azure-monitor-opentelemetry
+azure-nspkg==3.0.2        # via azure-mgmt-nspkg, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+azure-servicebus==7.14.3  # via apache-airflow-providers-microsoft-azure, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+azure-storage-blob==12.30.1  # via adlfs, apache-airflow-providers-microsoft-azure, azure-ai-projects, azure-storage-file-datalake, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+azure-storage-file-datalake==12.25.0  # via apache-airflow-providers-microsoft-azure, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+azure-storage-file-share==12.26.0  # via apache-airflow-providers-microsoft-azure, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt, -r requirements.af3.in
+azure-synapse-artifacts==0.22.0  # via apache-airflow-providers-microsoft-azure, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+azure-synapse-spark==0.7.0  # via apache-airflow-providers-microsoft-azure, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+babel==2.18.0             # via apache-airflow-task-sdk, flask-babel, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+billiard==4.2.4           # via celery, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+blinker==1.9.0            # via apache-airflow-providers-fab, flask, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+cachelib==0.17.0          # via flask-session, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+cachetools==7.1.8         # via apache-airflow-core, apache-airflow-providers-fab, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+cadwyn==7.0.0             # via apache-airflow-core, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+celery==5.6.3             # via apache-airflow-providers-celery, flower, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+certifi==2026.7.22        # via httpcore, httpx, msrest, requests, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+cffi==2.1.1               # via azure-datalake-store, cryptography, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+charset-normalizer==3.5.1  # via requests, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+click==8.5.0              # via celery, click-didyoumean, click-plugins, click-repl, flask, flask-appbuilder, rich-toolkit, uvicorn, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+click-didyoumean==0.3.1   # via celery, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+click-plugins==1.1.1.2    # via celery, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+click-repl==0.3.0         # via celery, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+colorama==0.4.6           # via flask-appbuilder, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+colorlog==6.12.0          # via apache-airflow-core, apache-airflow-task-sdk, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+cron-descriptor==2.1.0    # via apache-airflow-core, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt, -r requirements.af3.in
+croniter==6.2.4           # via apache-airflow-core, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt, -r requirements.af3.in
+cryptography==50.0.1      # via adal, apache-airflow-core, authlib, azure-identity, azure-storage-blob, azure-storage-file-share, joserfc, msal, pyjwt, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+databricks-sql-connector==4.5.0  # via apache-airflow-providers-databricks, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+deprecated==1.3.1         # via apache-airflow-core, limits, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+dill==0.4.1               # via apache-airflow-core, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+distro==1.9.0             # via openai, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+dnspython==2.8.0          # via email-validator, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+email-validator==2.3.0    # via fastapi, flask-appbuilder, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+et-xmlfile==2.0.0         # via openpyxl, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+fastapi==0.136.3          # via apache-airflow-core, cadwyn, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+fastapi-cli==0.0.32       # via fastapi, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+flask==3.1.3              # via apache-airflow-providers-fab, flask-appbuilder, flask-babel, flask-jwt-extended, flask-limiter, flask-login, flask-session, flask-sqlalchemy, flask-wtf, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+flask-appbuilder==5.2.2   # via apache-airflow-providers-fab, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+flask-babel==4.0.0        # via flask-appbuilder, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+flask-jwt-extended==4.7.4  # via flask-appbuilder, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+flask-limiter==4.1.1      # via apache-airflow-providers-fab, flask-appbuilder, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+flask-login==0.6.3        # via apache-airflow-providers-fab, flask-appbuilder, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+flask-session==0.8.0      # via apache-airflow-providers-fab, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+flask-sqlalchemy==3.1.1   # via apache-airflow-providers-fab, flask-appbuilder, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+flask-wtf==1.3.0          # via apache-airflow-providers-fab, flask-appbuilder, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+flower==2.1.0             # via apache-airflow-providers-celery, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+frozenlist==1.8.0         # via aiohttp, aiosignal, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+fsspec==2026.7.0          # via adlfs, apache-airflow-task-sdk, msgraphfs, universal-pathlib, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+googleapis-common-protos==1.75.3  # via opentelemetry-exporter-otlp-proto-grpc, opentelemetry-exporter-otlp-proto-http, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+greenback==1.3.0          # via apache-airflow-task-sdk, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+greenlet==3.5.5           # via greenback, sqlalchemy, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+grpcio==1.83.1            # via opentelemetry-exporter-otlp-proto-grpc, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+h11==0.16.0               # via httpcore, uvicorn, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+h2==4.4.1                 # via httpx, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+hpack==4.2.0              # via h2, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+httpcore==1.0.9           # via httpx, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+httptools==0.8.0          # via uvicorn, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+httpx==0.28.1             # via apache-airflow-core, apache-airflow-task-sdk, fastapi, microsoft-kiota-http, msgraph-core, msgraphfs, openai, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+humanize==4.16.0          # via flower, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+hyperframe==6.1.0         # via h2, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+idna==3.19                # via anyio, email-validator, httpx, requests, yarl, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+ijson==3.4.0.post0        # via azure-kusto-data, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+importlib-metadata==8.9.0  # via apache-airflow-core, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+isodate==0.7.2            # via azure-ai-projects, azure-batch, azure-keyvault-secrets, azure-mgmt-compute, azure-mgmt-containerinstance, azure-mgmt-containerregistry, azure-mgmt-cosmosdb, azure-mgmt-datafactory, azure-mgmt-resource, azure-mgmt-storage, azure-servicebus, azure-storage-blob, azure-storage-file-datalake, azure-storage-file-share, azure-synapse-artifacts, msrest, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+isoduration==20.11.0      # via apache-airflow-core, apache-airflow-task-sdk, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+itsdangerous==2.2.0       # via apache-airflow-core, flask, flask-wtf, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+jinja2==3.1.6             # via apache-airflow-core, apache-airflow-task-sdk, cadwyn, fastapi, flask, flask-babel, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+jiter==0.17.0             # via openai, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+jmespath==1.1.0           # via apache-airflow-providers-fab, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+joserfc==1.7.5            # via authlib, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+jsonschema==4.26.0        # via apache-airflow-core, apache-airflow-task-sdk, flask-appbuilder, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+jsonschema-specifications==2025.9.1  # via jsonschema, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+kombu==5.6.2              # via celery, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+lazy-object-proxy==1.12.0  # via apache-airflow-core, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+libcst==1.9.0             # via apache-airflow-core, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+limits==5.8.0             # via flask-limiter, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+linkify-it-py==2.2.0      # via apache-airflow-core, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+lockfile==0.12.2          # via apache-airflow-core, python-daemon, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+lz4==4.4.5                # via databricks-sql-connector, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+mako==1.4.1               # via alembic, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+markdown-it-py==4.2.0     # via rich, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+markupsafe==3.0.3         # via flask, jinja2, mako, werkzeug, wtforms, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+marshmallow==4.3.1        # via apache-airflow-providers-fab, flask-appbuilder, marshmallow-sqlalchemy, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+marshmallow-sqlalchemy==1.5.0  # via flask-appbuilder, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+mdurl==0.1.2              # via markdown-it-py, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+mergedeep==1.3.4          # via apache-airflow-providers-databricks, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+methodtools==0.4.7        # via apache-airflow-core, apache-airflow-providers-common-sql, apache-airflow-task-sdk, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+microsoft-kiota-abstractions==1.12.3  # via apache-airflow-providers-microsoft-azure, microsoft-kiota-authentication-azure, microsoft-kiota-http, microsoft-kiota-serialization-json, microsoft-kiota-serialization-text, msgraph-core, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+microsoft-kiota-authentication-azure==1.12.3  # via apache-airflow-providers-microsoft-azure, msgraph-core, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+microsoft-kiota-http==1.12.3  # via apache-airflow-providers-microsoft-azure, msgraph-core, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+microsoft-kiota-serialization-json==1.12.3  # via apache-airflow-providers-microsoft-azure, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+microsoft-kiota-serialization-text==1.12.3  # via apache-airflow-providers-microsoft-azure, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+more-itertools==11.1.0    # via apache-airflow-providers-common-sql, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+msal==1.38.0              # via azure-datalake-store, azure-identity, azure-kusto-data, msal-extensions, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt, -r requirements.af3.in
+msal-extensions==1.3.1    # via apache-airflow-providers-microsoft-azure, azure-identity, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+msgpack==1.2.2            # via apache-airflow-providers-fab, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+msgraph-core==1.5.1       # via apache-airflow-providers-microsoft-azure, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+msgraphfs==0.5            # via apache-airflow-providers-microsoft-azure, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+msgspec==0.21.1           # via apache-airflow-core, apache-airflow-task-sdk, flask-session, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+msrest==0.7.1             # via azure-monitor-opentelemetry-exporter, azure-synapse-spark, msrestazure, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+msrestazure==0.6.4.post1  # via azure-mgmt-datalake-store, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+multidict==6.8.0          # via aiohttp, yarl, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+nanoid==2.0.0             # via -r requirements.af3.in
+natsort==8.4.0            # via apache-airflow-core, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+numpy==2.5.3              # via pandas, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+oauthlib==3.3.1           # via databricks-sql-connector, requests-oauthlib, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+openai==2.54.0            # via azure-ai-projects, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+openpyxl==3.1.5           # via databricks-sql-connector, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+opentelemetry-api==1.44.0  # via apache-airflow-core, apache-airflow-task-sdk, azure-core-tracing-opentelemetry, azure-monitor-opentelemetry-exporter, microsoft-kiota-abstractions, microsoft-kiota-authentication-azure, microsoft-kiota-http, opentelemetry-exporter-otlp-proto-grpc, opentelemetry-exporter-otlp-proto-http, opentelemetry-instrumentation, opentelemetry-instrumentation-asgi, opentelemetry-instrumentation-dbapi, opentelemetry-instrumentation-django, opentelemetry-instrumentation-fastapi, opentelemetry-instrumentation-flask, opentelemetry-instrumentation-httpx, opentelemetry-instrumentation-logging, opentelemetry-instrumentation-psycopg2, opentelemetry-instrumentation-requests, opentelemetry-instrumentation-urllib, opentelemetry-instrumentation-urllib3, opentelemetry-instrumentation-wsgi, opentelemetry-sdk, opentelemetry-semantic-conventions, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt, -r requirements.af3.in
+opentelemetry-exporter-otlp==1.44.0  # via apache-airflow-core, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+opentelemetry-exporter-otlp-proto-common==1.44.0  # via opentelemetry-exporter-otlp-proto-grpc, opentelemetry-exporter-otlp-proto-http, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+opentelemetry-exporter-otlp-proto-grpc==1.44.0  # via opentelemetry-exporter-otlp, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+opentelemetry-exporter-otlp-proto-http==1.44.0  # via opentelemetry-exporter-otlp, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+opentelemetry-instrumentation==0.65b0  # via opentelemetry-instrumentation-asgi, opentelemetry-instrumentation-dbapi, opentelemetry-instrumentation-django, opentelemetry-instrumentation-fastapi, opentelemetry-instrumentation-flask, opentelemetry-instrumentation-httpx, opentelemetry-instrumentation-logging, opentelemetry-instrumentation-psycopg2, opentelemetry-instrumentation-requests, opentelemetry-instrumentation-urllib, opentelemetry-instrumentation-urllib3, opentelemetry-instrumentation-wsgi, opentelemetry-resource-detector-azure
+opentelemetry-instrumentation-asgi==0.65b0  # via opentelemetry-instrumentation-fastapi
+opentelemetry-instrumentation-dbapi==0.65b0  # via opentelemetry-instrumentation-psycopg2
+opentelemetry-instrumentation-django==0.65b0  # via azure-monitor-opentelemetry
+opentelemetry-instrumentation-fastapi==0.65b0  # via azure-monitor-opentelemetry
+opentelemetry-instrumentation-flask==0.65b0  # via azure-monitor-opentelemetry
+opentelemetry-instrumentation-httpx==0.65b0  # via azure-monitor-opentelemetry
+opentelemetry-instrumentation-logging==0.65b0  # via azure-monitor-opentelemetry
+opentelemetry-instrumentation-psycopg2==0.65b0  # via azure-monitor-opentelemetry
+opentelemetry-instrumentation-requests==0.65b0  # via azure-monitor-opentelemetry
+opentelemetry-instrumentation-urllib==0.65b0  # via azure-monitor-opentelemetry
+opentelemetry-instrumentation-urllib3==0.65b0  # via azure-monitor-opentelemetry
+opentelemetry-instrumentation-wsgi==0.65b0  # via opentelemetry-instrumentation-django, opentelemetry-instrumentation-flask
+opentelemetry-proto==1.44.0  # via apache-airflow-core, opentelemetry-exporter-otlp-proto-common, opentelemetry-exporter-otlp-proto-grpc, opentelemetry-exporter-otlp-proto-http, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+opentelemetry-resource-detector-azure==0.3.0  # via azure-monitor-opentelemetry
+opentelemetry-sdk==1.44.0  # via azure-monitor-opentelemetry, azure-monitor-opentelemetry-exporter, microsoft-kiota-abstractions, microsoft-kiota-authentication-azure, microsoft-kiota-http, opentelemetry-exporter-otlp-proto-grpc, opentelemetry-exporter-otlp-proto-http, opentelemetry-resource-detector-azure, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt, -r requirements.af3.in
+opentelemetry-semantic-conventions==0.65b0  # via opentelemetry-instrumentation, opentelemetry-instrumentation-asgi, opentelemetry-instrumentation-dbapi, opentelemetry-instrumentation-django, opentelemetry-instrumentation-fastapi, opentelemetry-instrumentation-flask, opentelemetry-instrumentation-httpx, opentelemetry-instrumentation-logging, opentelemetry-instrumentation-requests, opentelemetry-instrumentation-urllib, opentelemetry-instrumentation-urllib3, opentelemetry-instrumentation-wsgi, opentelemetry-sdk, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+opentelemetry-util-http==0.65b0  # via opentelemetry-instrumentation-asgi, opentelemetry-instrumentation-django, opentelemetry-instrumentation-fastapi, opentelemetry-instrumentation-flask, opentelemetry-instrumentation-httpx, opentelemetry-instrumentation-requests, opentelemetry-instrumentation-urllib, opentelemetry-instrumentation-urllib3, opentelemetry-instrumentation-wsgi
+ordered-set==4.1.0        # via flask-limiter, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+outcome==1.3.0.post0      # via greenback, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+packaging==26.3           # via apache-airflow-core, apache-airflow-task-sdk, apispec, kombu, limits, opentelemetry-instrumentation, opentelemetry-instrumentation-flask, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+pandas==3.0.5             # via apache-airflow-providers-databricks, databricks-sql-connector, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+pathlib-abc==0.5.2        # via universal-pathlib, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+pathspec==1.1.1           # via apache-airflow-core, apache-airflow-task-sdk, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+pendulum==3.2.0           # via apache-airflow-core, apache-airflow-task-sdk, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt, -r requirements.af3.in
+pluggy==1.6.0             # via apache-airflow-core, apache-airflow-task-sdk, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+prison==0.2.1             # via flask-appbuilder, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+prometheus-client==0.26.0  # via flower, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+prompt-toolkit==3.0.53    # via click-repl, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+propcache==0.5.2          # via aiohttp, yarl, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+protobuf==6.33.6          # via googleapis-common-protos, opentelemetry-proto, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+psutil==7.2.2             # via apache-airflow-core, apache-airflow-task-sdk, azure-monitor-opentelemetry-exporter, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+psycopg==3.3.5            # via apache-airflow-providers-postgres, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+psycopg-binary==3.3.5     # via psycopg, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+psycopg2-binary==2.9.13   # via apache-airflow-providers-postgres, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+pyarrow==25.0.1           # via apache-airflow-providers-databricks, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+pyasn1==0.6.4             # via -c ../vendor/constraints/constraints-3.3.2-python3.14.txt, -r requirements.af3.in
+pybreaker==1.4.1          # via databricks-sql-connector, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+pycparser==3.0            # via cffi, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+pydantic==2.13.5          # via apache-airflow-core, apache-airflow-providers-http, apache-airflow-task-sdk, cadwyn, fastapi, openai, pydantic-extra-types, pydantic-settings, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+pydantic-core==2.46.5     # via pydantic, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+pydantic-extra-types==2.11.1  # via fastapi, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+pydantic-settings==2.15.0  # via fastapi, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+pygments==2.21.0          # via apache-airflow-core, rich, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+pygtrie==2.6.1            # via apache-airflow-core, apache-airflow-task-sdk, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+pyjwt==2.14.0             # via adal, apache-airflow-core, apache-airflow-providers-fab, databricks-sql-connector, flask-appbuilder, flask-jwt-extended, msal, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt, -r requirements.af3.in
+python-daemon==3.1.2      # via apache-airflow-core, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+python-dateutil==2.9.0.post0  # via adal, apache-airflow-core, apache-airflow-task-sdk, arrow, azure-kusto-data, celery, croniter, databricks-sql-connector, flask-appbuilder, pandas, pendulum, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt, -r requirements.af3.in
+python-dotenv==1.2.3      # via pydantic-settings, uvicorn, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+python-multipart==0.0.32  # via fastapi, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+python-slugify==9.0.0     # via apache-airflow-core, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+pytz==2026.3.post1        # via flask-babel, flower, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+pyyaml==6.0.3             # via apache-airflow-core, apispec, libcst, uvicorn, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+redis==6.4.0              # via kombu, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+referencing==0.37.0       # via jsonschema, jsonschema-specifications, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+requests==2.34.2          # via adal, apache-airflow-core, apache-airflow-providers-databricks, apache-airflow-providers-http, azure-core, azure-datalake-store, azure-kusto-data, databricks-sql-connector, msal, msrest, opentelemetry-exporter-otlp-proto-http, requests-oauthlib, requests-toolbelt, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt, -r requirements.af3.in
+requests-oauthlib==2.0.0  # via msrest, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+requests-toolbelt==1.0.0  # via apache-airflow-providers-http, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+rich==15.0.0              # via apache-airflow-core, rich-argparse, rich-toolkit, typer, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+rich-argparse==1.8.0      # via apache-airflow-core, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+rich-toolkit==0.20.5      # via fastapi-cli, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+rpds-py==2026.6.3         # via jsonschema, referencing, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+setproctitle==1.3.7       # via apache-airflow-core, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+shellingham==1.5.4        # via typer, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+six==1.17.0               # via msrestazure, prison, python-dateutil, wirerope, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+sniffio==1.3.1            # via greenback, openai, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+sqlalchemy==2.0.52        # via alembic, apache-airflow-core, flask-appbuilder, flask-sqlalchemy, marshmallow-sqlalchemy, sqlalchemy-utils, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+sqlalchemy-utils==0.42.1  # via flask-appbuilder, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+sqlparse==0.6.0           # via apache-airflow-providers-common-sql, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+starlette==1.6.0          # via apache-airflow-core, cadwyn, fastapi, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+std-uritemplate==2.0.12   # via microsoft-kiota-abstractions, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+structlog==26.1.0         # via apache-airflow-core, apache-airflow-task-sdk, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+svcs==26.2.0              # via apache-airflow-core, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+tabulate==0.10.0          # via apache-airflow-core, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+tenacity==9.1.4           # via apache-airflow-core, apache-airflow-task-sdk, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt, -r requirements.af3.in
+termcolor==3.3.0          # via apache-airflow-core, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+text-unidecode==1.3       # via python-slugify, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+thrift==0.24.0            # via databricks-sql-connector, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+tornado==6.5.8            # via flower, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+tqdm==4.70.1              # via openai, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+typer==0.27.2             # via fastapi-cli, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+typing-extensions==4.16.0  # via alembic, anyio, apache-airflow-core, apache-airflow-task-sdk, azure-ai-projects, azure-batch, azure-core, azure-cosmos, azure-identity, azure-keyvault-secrets, azure-mgmt-compute, azure-mgmt-containerregistry, azure-mgmt-cosmosdb, azure-mgmt-datafactory, azure-mgmt-resource, azure-mgmt-storage, azure-servicebus, azure-storage-blob, azure-storage-file-datalake, azure-storage-file-share, azure-synapse-artifacts, cadwyn, cron-descriptor, fastapi, flask-limiter, grpcio, limits, openai, opentelemetry-api, opentelemetry-exporter-otlp-proto-grpc, opentelemetry-exporter-otlp-proto-http, opentelemetry-sdk, opentelemetry-semantic-conventions, pydantic, pydantic-core, pydantic-extra-types, rich-toolkit, sqlalchemy, svcs, typing-inspection, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+typing-inspection==0.4.4  # via cadwyn, fastapi, pydantic, pydantic-settings, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+tzdata==2026.4            # via arrow, kombu, pendulum, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+tzlocal==5.4.4            # via celery, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+universal-pathlib==0.3.10  # via apache-airflow-core, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+urllib3==2.7.0            # via databricks-sql-connector, requests, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt, -r requirements.af3.in
+uuid6==2025.0.1           # via apache-airflow-core, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+uvicorn==0.52.4           # via apache-airflow-core, fastapi, fastapi-cli, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+uvloop==0.22.1            # via uvicorn, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+vine==5.1.0               # via amqp, celery, kombu, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+watchfiles==1.2.0         # via uvicorn, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+wcwidth==0.8.3            # via prompt-toolkit, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+websockets==16.1.1        # via uvicorn, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+werkzeug==3.1.8           # via apache-airflow-providers-fab, flask, flask-appbuilder, flask-jwt-extended, flask-login, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+wirerope==1.0.0           # via methodtools, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+wrapt==2.4.1              # via deprecated, opentelemetry-instrumentation, opentelemetry-instrumentation-dbapi, opentelemetry-instrumentation-httpx, opentelemetry-instrumentation-urllib3, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+wtforms==3.2.2            # via apache-airflow-providers-fab, flask-appbuilder, flask-wtf, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+yarl==1.24.5              # via aiohttp, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt
+zipp==4.1.0               # via importlib-metadata, -c ../vendor/constraints/constraints-3.3.2-python3.14.txt

@@ -1,0 +1,7 @@
+# Value overlays are passed with -f; they are not part of the packaged chart.
+env/
+profiles/
+.git/
+*.swp
+*.bak
+*.tmp

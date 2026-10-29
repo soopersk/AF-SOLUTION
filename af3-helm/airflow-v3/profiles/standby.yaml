@@ -1,0 +1,17 @@
+# Built but idle: every Airflow component at zero.
+#  - Build day (§6): the whole stack exists before the cutover with nothing running.
+#  - §10.2 Phase C: the state the migration Job runs in.
+#  - Rollback (§12): v3 scaled to zero while v2 restarts.
+# Scale through this profile, not `kubectl scale`, so the next Helm upgrade cannot quietly undo it.
+airflow:
+  apiServer:
+    replicas: 0
+  dagProcessor:
+    replicas: 0
+  scheduler:
+    replicas: 0
+  triggerer:
+    replicas: 0
+  workers:
+    celery:
+      replicas: 0

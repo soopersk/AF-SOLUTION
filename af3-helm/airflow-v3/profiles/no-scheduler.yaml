@@ -1,0 +1,6 @@
+# §10.2 Phase D step 4, first half: workers and triggerer join, scheduler still at zero so they
+# register with the broker before any run is queued. Then upgrade with no profile: the
+# scheduler starts last.
+airflow:
+  scheduler:
+    replicas: 0

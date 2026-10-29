@@ -1,0 +1,61 @@
+{{- /*
+Static PV + PVC for the v3 Azure Files share (SMB, existing CSI driver), §6.6.
+
+Both carry helm.sh/resource-policy: keep — `helm uninstall` of the release must never take the
+share binding with it; storage lifecycle is owned outside the release. Retain does the same for
+the data if the PV itself is ever deleted.
+*/ -}}
+{{- if .Values.storage.create }}
+{{- $s := .Values.storage }}
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ $s.pvName }}
+  labels:
+    {{- include "airflow-v3.labels" . | nindent 4 }}
+    component: storage
+  annotations:
+    helm.sh/resource-policy: keep
+    pv.kubernetes.io/provisioned-by: file.csi.azure.com
+spec:
+  capacity:
+    storage: {{ $s.size }}
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: {{ $s.storageClassName }}
+  {{- with $s.mountOptions }}
+  mountOptions:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  csi:
+    driver: file.csi.azure.com
+    # Must be unique cluster-wide, or the CSI driver treats two PVs as one volume. Including the
+    # PV name keeps v2's handle and v3's apart even if both ever point at the same account.
+    volumeHandle: {{ printf "%s#%s#%s#%s" $s.resourceGroup $s.storageAccount $s.shareName $s.pvName }}
+    volumeAttributes:
+      resourceGroup: {{ $s.resourceGroup }}
+      storageAccount: {{ $s.storageAccount }}
+      shareName: {{ $s.shareName }}
+    nodeStageSecretRef:
+      name: {{ $s.nodeStageSecretName }}
+      namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $s.claimName }}
+  labels:
+    {{- include "airflow-v3.labels" . | nindent 4 }}
+    component: storage
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: {{ $s.storageClassName }}
+  volumeName: {{ $s.pvName }}
+  resources:
+    requests:
+      storage: {{ $s.size }}
+{{- end }}

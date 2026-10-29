@@ -1,0 +1,70 @@
+{{- /*
+Explicit schema migration, §7.6 / §10.2 Phase C step 5. Run on the v3 image inside the cluster,
+never from a laptop: a dropped connection mid-migration leaves a half-applied schema.
+
+- Connects on the direct port (5432) through its own Secret; the release's runtime Secret stays
+  on PgBouncer (6432).
+- backoffLimit 0 and no deadline: a failed migration is never retried and a running one is never
+  interrupted. On failure, drop the clone and start again from the clone step (§7.6).
+- A new Job per runId, kept through later upgrades (resource-policy: keep), so every attempt's
+  log stays available for the change record. Delete old ones by hand once recorded.
+*/ -}}
+{{- if .Values.migration.enabled }}
+{{- $runId := required "migration.runId is required: each migration run is a new Job" .Values.migration.runId }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ printf "%s-db-migrate-%s" .Release.Name (toString $runId) | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "airflow-v3.labels" . | nindent 4 }}
+    component: db-migrate
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        {{- include "airflow-v3.labels" . | nindent 8 }}
+        component: db-migrate
+    spec:
+      restartPolicy: Never
+      {{- include "airflow-v3.podSpec" . | nindent 6 }}
+      containers:
+        - name: run-airflow-migrations
+          image: {{ include "airflow-v3.image" . }}
+          imagePullPolicy: {{ .Values.airflow.images.airflow.pullPolicy }}
+          command: ["bash", "-euo", "pipefail", "-c"]
+          args:
+            - |
+              echo "migration start: $(date -u +%FT%TZ)"
+              airflow db migrate
+              airflow db check-migrations --migration-wait-timeout {{ .Values.migration.migrationWaitTimeout }}
+              echo "migration end: $(date -u +%FT%TZ)"
+          env:
+            - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.migration.directConnectionSecretName }}
+                  key: connection
+            - name: AIRFLOW__CORE__FERNET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.airflow.fernetKeySecretName }}
+                  key: fernet-key
+          {{- with .Values.migration.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: {{ .Values.airflow.airflowHome }}/airflow.cfg
+              subPath: airflow.cfg
+              readOnly: true
+      volumes:
+        # The release's own airflow.cfg, so the migration sees the same configuration as the
+        # components that will run on the migrated schema.
+        - name: config
+          configMap:
+            name: {{ .Release.Name }}-config
+{{- end }}

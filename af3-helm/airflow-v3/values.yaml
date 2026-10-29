@@ -1,0 +1,265 @@
+# Airflow v3 stack (Airflow 3.3.2, Python 3.14) — base values for every environment.
+# § references are to "Airflow 2.10.5 to 3.3.2 Migration Plan (Blue/Green on AKS)".
+#
+# Layering, later wins:
+#   values.yaml  ->  env/<env>.yaml  ->  profiles/<profile>.yaml   (no profile = fully active)
+#
+# Release and namespace are both `airflow-v3` (§6.1). The official chart names every resource
+# after the release, so the release name also fixes the api-server Service name that workers
+# use for the execution API: http://airflow-v3-api-server:8080/execution/ (§6.2).
+#
+# No secret values live here. Every credential is a pre-created Secret referenced by name; the
+# list and the key each one must hold is in ../README.md.
+
+# ---------------------------------------------------------------------------------------------
+# Resources this wrapper chart adds (templates/)
+# ---------------------------------------------------------------------------------------------
+
+storage:
+  # One new Azure Files (SMB) share for v3 through the existing CSI driver, with sub-paths
+  # dags/, logs/ and plugins/ (§6.6). Never v2's share.
+  # false: bind to an IaC-owned PVC that already exists under `claimName`.
+  create: true
+  claimName: airflow-v3-files
+  # PersistentVolumes are cluster-scoped, so the name must be unique across every environment
+  # and lane on the cluster.
+  pvName: ""            # required, e.g. pv-airflow-v3-dev
+  size: 100Gi           # same quota as v2's share or larger
+  storageClassName: azurefile-csi
+  resourceGroup: ""     # required
+  storageAccount: ""    # required
+  shareName: ""         # required
+  # Secret in the release namespace holding azurestorageaccountname / azurestorageaccountkey.
+  nodeStageSecretName: airflow-v3-storage
+  # Copy v2's SMB mount options verbatim: storage is not tuned during the upgrade (§6.6). SMB
+  # ignores chown, so uid/gid here are what give UID 50000 / GID 0 ownership.
+  mountOptions:
+    - dir_mode=0775
+    - file_mode=0664
+    - uid=50000
+    - gid=0
+    - mfsymlinks
+    - cache=strict
+    - nosharesock
+    - actimeo=30
+  # One-time post-install Job: creates dags/, logs/ and plugins/ and proves UID 50000 can write
+  # to each, so an ownership problem fails the install instead of the first task (§6.6).
+  initJob:
+    enabled: true
+
+migration:
+  # The only way this release migrates the schema (§7.6, §10.2 Phase C step 5). The official
+  # chart's migrateDatabaseJob is disabled below, so no install or upgrade migrates implicitly.
+  # Run once per clone, with a new runId each time:
+  #   --set migration.enabled=true --set migration.runId=<yyyymmddhhmm>
+  enabled: false
+  runId: ""
+  # Direct port 5432, never PgBouncer 6432: a migration can hold a session-level lock for its
+  # whole run, which transaction pooling breaks (§6.5). Secret key: `connection`.
+  directConnectionSecretName: airflow-v3-db-direct
+  migrationWaitTimeout: 60
+  resources: {}
+
+# ---------------------------------------------------------------------------------------------
+# Official Apache Airflow chart 1.22.0 (subchart `airflow`)
+# Key reference: helm show values charts/airflow-1.22.0.tgz
+# ---------------------------------------------------------------------------------------------
+
+airflow:
+  # The chart branches on this version (api-server, dag-processor, auth manager), not on the
+  # image, so it must match the image.
+  airflowVersion: "3.3.2"
+  defaultAirflowTag: "3.3.2"
+
+  images:
+    airflow:
+      # Image built from ../image and pushed to the platform registry (§5.4).
+      repository: ""    # required, e.g. <acr>.azurecr.io/airflow
+      tag: 3.3.2-python3.14
+      # Deploy by digest, never by tag (§5.4). The chart prefers the digest when both are set.
+      digest: ""        # required, sha256:...
+      pullPolicy: IfNotPresent
+
+  executor: CeleryExecutor
+  # No pod-launch RBAC: CeleryExecutor runs tasks in the workers, and the image has no
+  # cncf.kubernetes provider (requirements.af3.in) that could launch pods.
+  allowPodLaunching: false
+
+  # Dedicated tainted nodepool for v3 (§6.1). The pool's nodes must carry label workload=airflow-v3.
+  nodeSelector:
+    workload: airflow-v3
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: airflow-v3
+      effect: NoSchedule
+
+  # --- Secrets (§6.3, appendix C) --------------------------------------------------------------
+  data:
+    # postgresql://...@<server>:6432/airflow_v3 — the pooled PgBouncer port serves all runtime
+    # traffic (§6.5). Starts pointing at an empty dev DB; repointed to the migrated clone in
+    # §10.2 Phase D step 2.
+    metadataSecretName: airflow-v3-db
+    # db+postgresql://...@<server>:6432/airflow_v3 — the v3 database, never v2's, or v3 writes
+    # Celery tables into the v2 database (§3).
+    resultBackendSecretName: airflow-v3-result-backend
+    # rediss://:<key>@<new-redis>:6380/0 — the new Redis instance (§6.4, D5).
+    brokerUrlSecretName: airflow-v3-broker
+  # Same key value as v2, or stored connections and variables do not decrypt (D3).
+  fernetKeySecretName: airflow-v3-fernet
+  # New in Airflow 3; generated fresh for v3, nothing reused from v2 (D4).
+  jwtSecretName: airflow-v3-jwt
+  apiSecretKeySecretName: airflow-v3-api-secret-key
+
+  # --- Components that live outside this release ------------------------------------------------
+  # Azure Database for PostgreSQL Flexible Server with its built-in PgBouncer, and Azure Cache
+  # for Redis, are provisioned outside the chart (§6.4, §6.5).
+  postgresql:
+    enabled: false
+  pgbouncer:
+    enabled: false
+  redis:
+    enabled: false
+  # Not part of the v3 pod set (§2). Turn statsd back on if v2's dashboards read statsd metrics.
+  statsd:
+    enabled: false
+  flower:
+    enabled: false
+
+  # Users and roles arrive in the migrated FAB tables, and login is SSO (D2).
+  createUserJob:
+    enabled: false
+  # Never migrate implicitly on install/upgrade: use migration.enabled above (§6.7, §7.6).
+  # Components keep their wait-for-migrations init container, so they cannot start against an
+  # unmigrated database.
+  migrateDatabaseJob:
+    enabled: false
+
+  # --- Components (§2 "Pods per stack") ---------------------------------------------------------
+  # Replica counts here are the fully active state; profiles/ scale them down for build day and
+  # the staged start. One PDB each for api-server, scheduler, dag-processor and workers (§6.1).
+  apiServer:
+    replicas: 2
+    podDisruptionBudget:
+      enabled: true
+      config:
+        maxUnavailable: 1
+    networkPolicy:
+      ingress:
+        # Without the first peer, workers could not reach /execution/ and every task would fail
+        # (§6.2). The namespace is dedicated to v3, so "any pod here" means the v3 components.
+        # Lists are replaced, not merged, by overlays: an env file that changes the ingress
+        # namespace must repeat the first peer.
+        from:
+          - podSelector: {}
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: ingress-nginx
+    # FAB auth manager config (webserver_config.py) for AAD/SSO. Port v2's
+    # webserver.webserverConfig here and add the v3 redirect URI to the app registration (§6.3).
+    apiServerConfig: ~
+
+  scheduler:
+    replicas: 2
+    podDisruptionBudget:
+      enabled: true
+      config:
+        maxUnavailable: 1
+    # The one log groomer for the shared logs/ tree. Set retention to v2's value.
+    logGroomerSidecar:
+      enabled: true
+      retentionDays: 15
+
+  dagProcessor:
+    enabled: true
+    replicas: 1
+    podDisruptionBudget:
+      enabled: true
+      config:
+        maxUnavailable: 1
+    # Every groomer sweeps the whole shared logs/ tree, so the scheduler's alone covers it;
+    # more would only multiply the scans over SMB.
+    logGroomerSidecar:
+      enabled: false
+
+  triggerer:
+    replicas: 1
+    # Logs go to the shared share (logs.persistence below), not a per-pod volume.
+    persistence:
+      enabled: false
+    logGroomerSidecar:
+      enabled: false
+
+  workers:
+    celery:
+      # Start at v2's worker count and size (§6.1); tune after the UAT load test.
+      replicas: 2
+      # Logs go to the shared share, so workers are a Deployment, not a StatefulSet with a
+      # private volume per pod.
+      persistence:
+        enabled: false
+      podDisruptionBudget:
+        enabled: true
+        config:
+          maxUnavailable: 1
+
+  # --- Storage (§6.6) ---------------------------------------------------------------------------
+  # Both must name storage.claimName; templates/validate.yaml enforces it.
+  dags:
+    persistence:
+      enabled: true
+      existingClaim: airflow-v3-files
+      subPath: dags
+      accessMode: ReadWriteMany
+  logs:
+    persistence:
+      enabled: true
+      existingClaim: airflow-v3-files
+      subPath: logs
+
+  # The `orchestration` plugin is published to the share, not installed in the image
+  # (requirements.af3.in). Mounted read-only on every component, including the api-server.
+  volumes:
+    - name: airflow-v3-plugins
+      persistentVolumeClaim:
+        claimName: airflow-v3-files
+  volumeMounts:
+    - name: airflow-v3-plugins
+      mountPath: /opt/airflow/plugins
+      subPath: plugins
+      readOnly: true
+
+  # --- Networking (§6.2) ------------------------------------------------------------------------
+  # Ingress to the api-server only. Egress to PostgreSQL and Redis is controlled by their
+  # firewalls / private endpoints allowing the v3 nodepool subnet, not by these policies.
+  networkPolicies:
+    enabled: true
+  ingress:
+    apiServer:
+      enabled: true
+      # Test hostname until cutover; the production hostname moves in §10.2 Phase E.
+      hosts: []         # set per environment
+      ingressClassName: ""
+
+  # --- airflow.cfg (appendix C) -----------------------------------------------------------------
+  # core.execution_api_server_url is left to the chart, which renders it from the release name.
+  config:
+    core:
+      auth_manager: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+    api:
+      base_url: ""      # required, public URL of the api-server ingress
+    scheduler:
+      # Airflow 3's default; set explicitly so a config change cannot flip it. DAGs still set
+      # catchup themselves (§5.2).
+      catchup_by_default: 'False'
+    logging:
+      # Azure Blob remote logging is Phase 2 (§14.3); logs stay on the share until then.
+      remote_logging: 'False'
+      # v2 builds LOGGING_CONFIG in airflow_local_settings (Azure Monitor OpenTelemetry handler).
+      # Once it is ported to airflowLocalSettings below, point Airflow at it:
+      # logging_config_class: airflow_local_settings.LOGGING_CONFIG
+
+  # Port v2's airflow_local_settings.py here (LOGGING_CONFIG, cluster policies,
+  # azure_graph_api_client) after reviewing it for Airflow 3 (§5.1, §5.3). Left unset, the
+  # chart's default renders nothing for Airflow 3.
+  # airflowLocalSettings: |-

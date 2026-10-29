@@ -1,0 +1,31 @@
+# prod — v3 stack. Replace every <placeholder>; templates/validate.yaml refuses to render
+# required values that still contain one.
+#
+# Until cutover the stack answers only on the test hostname (D11). At §10.2 Phase E, if the
+# switch is made at the ingress rather than in DNS, add the production host to `hosts` and set
+# base_url to it, then upgrade with the active profile.
+
+storage:
+  pvName: pv-airflow-v3-prod
+  resourceGroup: <resource-group>
+  storageAccount: <storage-account>
+  shareName: airflow-v3
+
+airflow:
+  images:
+    airflow:
+      repository: <registry>/airflow
+      digest: sha256:<digest>
+
+  config:
+    api:
+      base_url: https://airflow-v3.<domain>
+
+  ingress:
+    apiServer:
+      ingressClassName: <ingress-class>
+      hosts:
+        - name: airflow-v3.<domain>
+          tls:
+            enabled: true
+            secretName: airflow-v3-tls

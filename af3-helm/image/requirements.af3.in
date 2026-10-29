@@ -1,0 +1,45 @@
+# Single direct-dependency input for the Airflow 3.3.2 runtime image.
+# Resolved by scripts/resolve-af3-lock.sh into requirements.af3.lock.
+# Versions come from constraints-3.3.2-python3.14.txt. Do not pin here unless a
+# package is absent from the constraints and needs a deliberate floor.
+
+# --- Airflow core -------------------------
+apache-airflow==3.3.2
+
+# --- Providers (versions supplied by the constraints file) -------------------------
+apache-airflow-providers-celery         # retained CeleryExecutor
+apache-airflow-providers-fab            # AAD/FAB security manager
+apache-airflow-providers-http           # HttpSensor, direct import
+apache-airflow-providers-postgres       # PostgresHook, direct import
+apache-airflow-providers-standard       # standard operators during AF3 remediation
+apache-airflow-providers-microsoft-azure # Blob remote logging
+apache-airflow-providers-smtp           # approved future capability; disabled by conf
+apache-airflow-providers-databricks     # approved future capability; disabled by conf
+
+# --- Observability -------------------------
+# Required by helm/values.yaml airflow_local_settings.LOGGING_CONFIG.
+# Only azure.monitor.opentelemetry.exporter is imported today; see plan 3.3.
+azure-monitor-opentelemetry
+opentelemetry-api
+opentelemetry-sdk
+
+# --- Runtime dependencies of the `orchestration` plugin (D3) -------------------------
+# `orchestration` is published to the Azure File Share, not installed as a wheel,
+# so the image must supply its closure.
+aiohttp
+asgiref
+azure-core
+azure-identity
+azure-keyvault-secrets
+azure-storage-file-share     # remove only after Azure Files log-cleanup code is retired
+cron-descriptor
+croniter
+msal                         # helm/values.yaml azure_graph_api_client
+nanoid
+pendulum
+PyJWT
+pyasn1
+python-dateutil
+requests
+tenacity
+urllib3

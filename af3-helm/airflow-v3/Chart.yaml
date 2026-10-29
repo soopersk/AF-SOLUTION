@@ -1,0 +1,13 @@
+apiVersion: v2
+name: airflow-v3
+description: Airflow 3.3.2 (Python 3.14) v3 stack for the blue/green migration on AKS — wraps the official Apache Airflow chart
+type: application
+version: 0.1.0
+appVersion: "3.3.2"
+dependencies:
+  # 1.22.0 is the newest official chart; it supports Airflow 3.1.0+ and requires Helm 3.19.0+.
+  # Vendored in charts/ (sha512 + Apache signature in ../vendor/helm-chart), so installs never
+  # fetch it. Its bundled bitnami postgresql subchart stays disabled (airflow.postgresql.enabled).
+  - name: airflow
+    version: 1.22.0
+    repository: https://airflow.apache.org

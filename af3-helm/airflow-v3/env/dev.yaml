@@ -1,0 +1,36 @@
+# dev — v3 stack. Replace every <placeholder>; templates/validate.yaml refuses to render
+# required values that still contain one.
+
+storage:
+  pvName: pv-airflow-v3-dev
+  resourceGroup: <resource-group>
+  storageAccount: <storage-account>
+  shareName: airflow-v3
+
+airflow:
+  images:
+    airflow:
+      repository: <registry>/airflow
+      digest: sha256:<digest>
+
+  config:
+    api:
+      base_url: https://airflow-v3.dev.<domain>
+
+  ingress:
+    apiServer:
+      ingressClassName: <ingress-class>
+      hosts:
+        - name: airflow-v3.dev.<domain>
+          tls:
+            enabled: true
+            secretName: airflow-v3-tls
+
+  # Smallest footprint that still exercises every component.
+  apiServer:
+    replicas: 1
+  scheduler:
+    replicas: 1
+  workers:
+    celery:
+      replicas: 1

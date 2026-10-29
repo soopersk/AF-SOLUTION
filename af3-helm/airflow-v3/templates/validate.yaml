@@ -1,0 +1,40 @@
+{{- /*
+Render-time guards. Renders nothing; fails `helm template` / `helm upgrade` before anything
+reaches the cluster.
+
+Required values are refused while empty or still holding an env-file <placeholder>, so an
+unedited overlay cannot deploy.
+*/ -}}
+{{- $a := .Values.airflow -}}
+{{- $required := dict
+  "airflow.images.airflow.repository" $a.images.airflow.repository
+  "airflow.images.airflow.digest (deploy by digest, never by tag, §5.4)" $a.images.airflow.digest
+  "airflow.config.api.base_url" $a.config.api.base_url
+-}}
+{{- if .Values.storage.create -}}
+{{- $_ := set $required "storage.pvName" .Values.storage.pvName -}}
+{{- $_ := set $required "storage.resourceGroup" .Values.storage.resourceGroup -}}
+{{- $_ := set $required "storage.storageAccount" .Values.storage.storageAccount -}}
+{{- $_ := set $required "storage.shareName" .Values.storage.shareName -}}
+{{- end -}}
+{{- range $key, $value := $required -}}
+{{- if or (not $value) (contains "<" (toString $value)) -}}
+{{- fail (printf "%s is required and must not be a <placeholder> (got %q)" $key (toString $value)) -}}
+{{- end -}}
+{{- end -}}
+
+{{- /* All three mounts are sub-paths of the one v3 share (§6.6). */ -}}
+{{- $claim := .Values.storage.claimName -}}
+{{- if or (ne $a.dags.persistence.existingClaim $claim) (ne $a.logs.persistence.existingClaim $claim) -}}
+{{- fail (printf "airflow.dags.persistence.existingClaim and airflow.logs.persistence.existingClaim must both equal storage.claimName (%s)" $claim) -}}
+{{- end -}}
+
+{{- /* A migration may only run through migration.enabled, on the direct port (§7.6). */ -}}
+{{- if $a.migrateDatabaseJob.enabled -}}
+{{- fail "airflow.migrateDatabaseJob.enabled must stay false: run migrations with migration.enabled=true (direct port, §7.6)" -}}
+{{- end -}}
+
+{{- /* The v3 stack is Airflow 3.3.2 on the chart's 3.x code paths. */ -}}
+{{- if ne (toString $a.airflowVersion) "3.3.2" -}}
+{{- fail (printf "airflow.airflowVersion must be 3.3.2 (got %s)" (toString $a.airflowVersion)) -}}
+{{- end -}}
